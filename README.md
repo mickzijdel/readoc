@@ -21,7 +21,11 @@ above `--max-size` (default 500 KB) instead of truncating them.
 
 ## Requirements
 
-`python-docx`, `openpyxl`, `pymupdf` (PyMuPDF).
+[`uv`](https://docs.astral.sh/uv/) on your `PATH`, that's the only prerequisite.
+Both CLIs declare their Python dependencies (`python-docx`, `openpyxl`, `pymupdf`)
+inline via [PEP 723](https://peps.python.org/pep-0723/) and run through
+`uv run --script`, so uv installs them into a cached environment automatically on
+first use. No manual `pip install` and no venv to manage.
 
 ## Layout
 

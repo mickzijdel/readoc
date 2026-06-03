@@ -59,5 +59,8 @@ huge files unintentionally. Skipped files are **listed** in the skip report
 `--max-size <KB>` when you genuinely need a large file.
 
 ## Requirements
-`python-docx`, `openpyxl`, and `pymupdf` (PyMuPDF) must be installed for the
-`.docx`, `.xlsx`, and `.pdf` readers respectively.
+[`uv`](https://docs.astral.sh/uv/) must be on `PATH`, it's the only prerequisite.
+Both CLIs declare their Python dependencies (`python-docx`, `openpyxl`, `pymupdf`,
+for the `.docx`, `.xlsx`, and `.pdf` readers respectively) inline via PEP 723 and
+run through `uv run --script`, so uv installs them into a cached environment
+automatically on first use.
