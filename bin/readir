@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+"""Read entire folders of documents — explore, read, and search across mixed file types."""
+
+import sys
+import os
+import argparse
+import io
+
+
+# --- File readers (self-contained, mirroring readoc) ---
+
+def read_pdf_text(path):
+    import fitz
+    lines = []
+    doc = fitz.open(path)
+    for page_num, page in enumerate(doc, 1):
+        text = page.get_text().strip()
+        if text:
+            if len(doc) > 1:
+                lines.append(f"\n--- Page {page_num} ---\n")
+            lines.append(text)
+    doc.close()
+    return "\n".join(lines)
+
+
+def read_docx_text(path):
+    from docx import Document
+    lines = []
+    doc = Document(path)
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            if para.style and para.style.name.startswith("Heading"):
+                level = para.style.name.replace("Heading ", "").strip()
+                try:
+                    prefix = "#" * int(level) + " "
+                except ValueError:
+                    prefix = "# "
+                lines.append(f"{prefix}{text}")
+            else:
+                lines.append(text)
+    if doc.tables:
+        for i, table in enumerate(doc.tables):
+            lines.append(f"\n--- Table {i + 1} ---")
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def read_xlsx_text(path):
+    from openpyxl import load_workbook
+    buf = io.StringIO()
+    wb = load_workbook(path, read_only=True, data_only=True)
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        buf.write(f"=== Sheet: {sheet_name} ===\n\n")
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            buf.write("(empty sheet)\n\n")
+            continue
+        str_rows = []
+        for row in rows:
+            str_rows.append([str(cell) if cell is not None else "" for cell in row])
+        col_widths = []
+        for col_idx in range(len(str_rows[0])):
+            max_width = 0
+            for row in str_rows:
+                if col_idx < len(row):
+                    max_width = max(max_width, len(row[col_idx]))
+            # Cap the *padding* width for readability, but never truncate content.
+            col_widths.append(min(max_width, 40))
+        for row_idx, row in enumerate(str_rows):
+            padded = []
+            for col_idx, cell in enumerate(row):
+                width = col_widths[col_idx] if col_idx < len(col_widths) else 10
+                # ljust pads short cells for alignment; long cells overflow in full (no truncation).
+                padded.append(cell.ljust(width))
+            buf.write(" | ".join(padded) + "\n")
+            if row_idx == 0:
+                buf.write("-+-".join("-" * w for w in col_widths) + "\n")
+        buf.write("\n")
+    wb.close()
+    return buf.getvalue()
+
+
+def read_text_file(path):
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            with open(path, "r", encoding=encoding) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+# --- Supported extensions ---
+
+READABLE_TEXT = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
+READABLE_SPECIAL = {".docx", ".xlsx", ".pdf"}
+READABLE_ALL = READABLE_TEXT | READABLE_SPECIAL
+
+
+def read_file_content(path):
+    """Read a file and return its text content, or None on failure."""
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in READABLE_TEXT:
+            return read_text_file(path)
+        elif ext == ".docx":
+            return read_docx_text(path)
+        elif ext == ".xlsx":
+            return read_xlsx_text(path)
+        elif ext == ".pdf":
+            return read_pdf_text(path)
+    except Exception as e:
+        print(f"  Warning: Failed to read {path}: {e}", file=sys.stderr)
+    return None
+
+
+# --- Helpers ---
+
+def human_size(size_bytes):
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(size_bytes) < 1024:
+            if unit == "B":
+                return f"{size_bytes} {unit}"
+            return f"{size_bytes:.1f} {unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f} TB"
+
+
+def walk_files(root, max_depth=None, filter_exts=None, exclude_exts=None):
+    """Yield (relative_path, full_path, size) for files under root."""
+    root = os.path.abspath(root)
+    root_depth = root.rstrip(os.sep).count(os.sep)
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        current_depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
+
+        dirnames.sort()
+        if max_depth is not None and current_depth >= max_depth:
+            dirnames.clear()
+
+        for fname in sorted(filenames):
+            ext = os.path.splitext(fname)[1].lower()
+            if filter_exts and ext not in filter_exts:
+                continue
+            if exclude_exts and ext in exclude_exts:
+                continue
+            full = os.path.join(dirpath, fname)
+            rel = os.path.relpath(full, root)
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                size = 0
+            yield rel, full, size
+
+
+def parse_extensions(ext_str):
+    """Parse 'md,csv,docx' into {'.md', '.csv', '.docx'}."""
+    if not ext_str:
+        return None
+    return {("." + e.strip().lstrip(".")).lower() for e in ext_str.split(",")}
+
+
+# --- Commands ---
+
+def cmd_tree(args):
+    root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        print(f"Error: Not a directory: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    filter_exts = parse_extensions(args.filter)
+    ext_counts = {}
+    total_size = 0
+    file_count = 0
+
+    current_dir = None
+    for rel, full, size in walk_files(root, args.max_depth, filter_exts):
+        file_dir = os.path.dirname(rel)
+        if file_dir != current_dir:
+            current_dir = file_dir
+            dir_label = file_dir if file_dir else "."
+            print(f"\n  {dir_label}/")
+
+        fname = os.path.basename(rel)
+        ext = os.path.splitext(fname)[1].lower()
+        print(f"    {fname:<50s} {human_size(size):>10s}")
+
+        ext_counts[ext] = ext_counts.get(ext, 0) + 1
+        total_size += size
+        file_count += 1
+
+    if file_count == 0:
+        print("  (no files found)")
+        return
+
+    if args.summary:
+        print(f"\n{'─' * 40}")
+        print(f"  {file_count} files, {human_size(total_size)} total\n")
+        for ext, count in sorted(ext_counts.items(), key=lambda x: -x[1]):
+            label = ext if ext else "(no ext)"
+            print(f"    {label:<10s} {count:>5d} files")
+
+
+def cmd_read(args):
+    root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        print(f"Error: Not a directory: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    filter_exts = parse_extensions(args.filter)
+    exclude_exts = parse_extensions(args.exclude)
+    max_size = args.max_size * 1024  # KB to bytes
+
+    skipped = []
+    read_count = 0
+
+    for rel, full, size in walk_files(root, args.max_depth, filter_exts, exclude_exts):
+        ext = os.path.splitext(rel)[1].lower()
+
+        if ext not in READABLE_ALL:
+            skipped.append((rel, "unsupported format"))
+            continue
+
+        if size > max_size:
+            skipped.append((rel, f"too large ({human_size(size)})"))
+            continue
+
+        content = read_file_content(full)
+        if content is None:
+            skipped.append((rel, "read error"))
+            continue
+
+        print(f"{'═' * 60}")
+        print(f"  {rel} ({human_size(size)})")
+        print(f"{'═' * 60}")
+        print()
+        print(content)
+        print()
+        read_count += 1
+
+    if not args.no_skip_report and skipped:
+        print(f"\n{'─' * 60}")
+        print(f"  Skipped {len(skipped)} files:")
+        print(f"{'─' * 60}")
+        for rel, reason in skipped:
+            print(f"  {rel} — {reason}")
+
+    if read_count == 0 and not skipped:
+        print("  (no files found)")
+
+
+def cmd_search(args):
+    root = os.path.abspath(args.path)
+    if not os.path.isdir(root):
+        print(f"Error: Not a directory: {args.path}", file=sys.stderr)
+        sys.exit(1)
+
+    filter_exts = parse_extensions(args.filter)
+    query = args.query.lower()
+    context = args.context
+    match_count = 0
+
+    for rel, full, size in walk_files(root, filter_exts=filter_exts):
+        ext = os.path.splitext(rel)[1].lower()
+        if ext not in READABLE_ALL:
+            continue
+        if size > 500 * 1024:
+            continue
+
+        content = read_file_content(full)
+        if content is None:
+            continue
+
+        lines = content.splitlines()
+        matching_indices = [i for i, line in enumerate(lines) if query in line.lower()]
+
+        if not matching_indices:
+            continue
+
+        print(f"\n{'═' * 60}")
+        print(f"  {rel} ({len(matching_indices)} match{'es' if len(matching_indices) != 1 else ''})")
+        print(f"{'═' * 60}")
+
+        shown = set()
+        for idx in matching_indices:
+            start = max(0, idx - context)
+            end = min(len(lines), idx + context + 1)
+            for i in range(start, end):
+                if i not in shown:
+                    marker = ">>>" if i == idx else "   "
+                    print(f"  {marker} {i + 1:4d} | {lines[i]}")
+                    shown.add(i)
+            if end < len(lines):
+                print(f"       ...")
+
+        match_count += len(matching_indices)
+
+    if match_count == 0:
+        print(f"  No matches found for '{args.query}'")
+    else:
+        print(f"\n  {match_count} total match{'es' if match_count != 1 else ''}")
+
+
+# --- CLI ---
+
+HELP_TEXT = """\
+readir — Read entire folders of documents
+
+Usage:
+  readir tree <path>                  Show file tree with sizes
+  readir read <path>                  Concat all readable files
+  readir search <path> <query>        Search across all documents
+
+Examples:
+  readir tree ./docs --summary                 Tree with extension summary
+  readir tree ./docs --max-depth 2             Limit depth
+  readir tree ./docs --filter docx,pdf         Only show certain types
+
+  readir read ./docs                           Read everything readable
+  readir read ./docs --filter md,csv           Only read markdown and CSV
+  readir read ./docs --max-size 200            Skip files > 200 KB
+  readir read ./docs --exclude pdf             Skip PDFs
+
+  readir search ./docs "budget"                Search all docs for "budget"
+  readir search ./docs "risk" --context 5      More context around matches
+  readir search ./docs "venue" --filter docx   Only search Word files
+
+Supported formats: .md .txt .csv .docx .xlsx .pdf .json .yaml .yml
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="readir",
+        description="Read entire folders of documents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Supported formats: .md .txt .csv .docx .xlsx .pdf .json .yaml .yml",
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # help
+    subparsers.add_parser("help", help="Show detailed usage and examples")
+
+    # tree
+    p_tree = subparsers.add_parser("tree", help="Show file tree with sizes")
+    p_tree.add_argument("path", help="Directory to explore")
+    p_tree.add_argument("--max-depth", type=int, default=None, help="Limit recursion depth")
+    p_tree.add_argument("--filter", type=str, default=None, help="Only show these extensions (comma-separated, e.g. md,docx)")
+    p_tree.add_argument("--summary", action="store_true", help="Show extension/size summary")
+
+    # read
+    p_read = subparsers.add_parser("read", help="Concat all readable files")
+    p_read.add_argument("path", help="Directory to read")
+    p_read.add_argument("--max-depth", type=int, default=None, help="Limit recursion depth")
+    p_read.add_argument("--filter", type=str, default=None, help="Only read these extensions (comma-separated)")
+    p_read.add_argument("--exclude", type=str, default=None, help="Skip these extensions (comma-separated)")
+    p_read.add_argument("--max-size", type=int, default=500, help="Skip files larger than N KB (default: 500)")
+    p_read.add_argument("--no-skip-report", action="store_true", help="Suppress skipped files list")
+
+    # search
+    p_search = subparsers.add_parser("search", help="Search across all documents")
+    p_search.add_argument("path", help="Directory to search")
+    p_search.add_argument("query", help="Text to search for (case-insensitive)")
+    p_search.add_argument("--context", type=int, default=2, help="Lines of context around matches (default: 2)")
+    p_search.add_argument("--filter", type=str, default=None, help="Only search these extensions (comma-separated)")
+
+    args = parser.parse_args()
+
+    if args.command is None or args.command == "help":
+        print(HELP_TEXT)
+        sys.exit(0)
+    elif args.command == "tree":
+        cmd_tree(args)
+    elif args.command == "read":
+        cmd_read(args)
+    elif args.command == "search":
+        cmd_search(args)
+
+
+if __name__ == "__main__":
+    main()
