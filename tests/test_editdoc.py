@@ -399,3 +399,60 @@ def test_xlsx_missing_value_errors(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
     out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A1"})
     assert code == 1
+
+
+# --- Task 5: batch atomicity (validate-all-then-apply) ---
+
+
+def test_docx_batch_all_or_nothing_on_failure(editdoc, tmp_path):
+    # A valid edit followed by an invalid one must leave the file byte-identical:
+    # the first edit's (in-memory) change is never written when a later edit fails.
+    f = make_paras_docx(tmp_path / "x.docx", ["alpha unique", "beta line"])
+    before = sha256(f)
+    spec = [
+        {"old_string": "alpha unique", "new_string": "ALPHA"},  # valid
+        {"old_string": "does-not-exist", "new_string": "x"},  # invalid
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 1
+    assert "edit 2" in err
+    assert sha256(f) == before  # nothing written
+
+
+def test_docx_batch_all_valid_applies_every_edit(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["alpha", "beta", "gamma"])
+    spec = [
+        {"old_string": "alpha", "new_string": "A"},
+        {"old_string": "gamma", "new_string": "G"},
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 0, err
+    assert body_texts(f) == ["A", "beta", "G"]
+
+
+def test_docx_batch_multiple_range_deletes(editdoc, tmp_path):
+    # Two independent range deletes in one batch both succeed; deleting an earlier
+    # block must not invalidate the second block's anchors.
+    f = make_paras_docx(
+        tmp_path / "x.docx",
+        ["keep0", "d1a", "d1b", "keep1", "d2a", "d2b", "keep2"],
+    )
+    spec = [
+        {"start_contains": "d1a", "end_contains": "d1b", "new_text": ""},
+        {"start_contains": "d2a", "end_contains": "d2b", "new_text": ""},
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 0, err
+    assert body_texts(f) == ["keep0", "keep1", "keep2"]
+
+
+def test_xlsx_batch_all_or_nothing_on_failure(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    before = sha256(f)
+    spec = [
+        {"sheet": "Budget", "cell": "A5", "value": "1"},  # valid
+        {"sheet": "Nonexistent", "cell": "A1", "value": "x"},  # invalid
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 1
+    assert sha256(f) == before
