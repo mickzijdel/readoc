@@ -93,30 +93,7 @@ def test_walk_files_filter_and_exclude(readir_mod, sample_tree):
     assert not any(rel.endswith(".png") for rel in no_png)
 
 
-# --- Unit: extension sets & text reading ---
-
-
-def test_readable_sets(readir_mod):
-    assert ".md" in readir_mod.READABLE_TEXT
-    assert ".docx" in readir_mod.READABLE_SPECIAL
-    assert (
-        readir_mod.READABLE_ALL
-        == readir_mod.READABLE_TEXT | readir_mod.READABLE_SPECIAL
-    )
-
-
-def test_read_text_file_utf8(readir_mod, tmp_path):
-    f = tmp_path / "u.txt"
-    f.write_text("héllo wörld\n", encoding="utf-8")
-    assert readir_mod.read_text_file(str(f)) == "héllo wörld\n"
-
-
-def test_read_text_file_latin1_fallback(readir_mod, tmp_path):
-    f = tmp_path / "l.txt"
-    # 0xFF is invalid UTF-8 but valid latin-1 (ÿ); reader should fall back.
-    f.write_bytes(b"caf\xff\n")
-    result = readir_mod.read_text_file(str(f))
-    assert result == "caf\xff\n"
+# (Extension sets and read_text_file now live in bin/_readlib — see test_readlib.py.)
 
 
 # --- Integration: tree ---

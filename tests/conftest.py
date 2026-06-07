@@ -47,6 +47,18 @@ def readir_mod():
     return load_script("readir")
 
 
+@pytest.fixture(scope="session")
+def readlib_mod():
+    # The shared module carries a .py extension (it is imported, not run), so it
+    # needs a slightly different load than the extension-less CLI scripts.
+    path = BIN / "_readlib.py"
+    loader = SourceFileLoader("_readlib", str(path))
+    spec = importlib.util.spec_from_loader("_readlib", loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
 # --- Driving the CLIs end-to-end (for integration tests) ---
 
 
