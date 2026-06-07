@@ -7,11 +7,35 @@ the fly with python-docx / openpyxl; results are verified by re-opening the file
 
 import hashlib
 
+import docx
 from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
 
 
 # --- Fixture builders specific to editing tests ---
+
+
+def add_hyperlink_run(paragraph, text, url="https://example.com"):
+    """Append a real <w:hyperlink> (with a nested run) to ``paragraph``.
+
+    python-docx's ``paragraph.runs`` does NOT include runs nested inside a
+    hyperlink, so this builds the exact shape that a naive run-only rewrite would
+    silently scramble — the substrate for the hyperlink-safety tests.
+    """
+    part = paragraph.part
+    r_id = part.relate_to(
+        url, docx.opc.constants.RELATIONSHIP_TYPE.HYPERLINK, is_external=True
+    )
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), r_id)
+    run = OxmlElement("w:r")
+    t = OxmlElement("w:t")
+    t.text = text
+    run.append(t)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
 
 
 def make_runs_docx(path, runs, style=None):
@@ -456,3 +480,109 @@ def test_xlsx_batch_all_or_nothing_on_failure(editdoc, tmp_path):
     out, err, code = editdoc(f, spec)
     assert code == 1
     assert sha256(f) == before
+
+
+# --- Review fixes: hyperlink safety, merged cells, empty anchors ---
+
+
+def test_docx_edit_paragraph_with_hyperlink_refuses_loudly(editdoc, tmp_path):
+    # A paragraph whose text includes a hyperlink (whose runs are invisible to
+    # paragraph.runs) must NOT be rewritten — that silently scrambles it. Refuse
+    # loudly and leave the file byte-identical.
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("See the ")
+    add_hyperlink_run(p, "docs")
+    p.add_run(" for details on Monday.")
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    before = sha256(f)
+    out, err, code = editdoc(f, {"old_string": "Monday", "new_string": "Friday"})
+    assert code == 1
+    assert "hyperlink" in err.lower() or "safely" in err.lower()
+    assert sha256(f) == before  # nothing scrambled
+
+
+def test_docx_hyperlink_in_other_paragraph_does_not_block_edit(editdoc, tmp_path):
+    # The guard is scoped to the edited paragraph: a hyperlink elsewhere in the
+    # document must not block an edit to a clean paragraph.
+    doc = Document()
+    hp = doc.add_paragraph()
+    hp.add_run("Visit ")
+    add_hyperlink_run(hp, "our site")
+    doc.add_paragraph("Plain paragraph with target word.")
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    out, err, code = editdoc(f, {"old_string": "target word", "new_string": "FIXED"})
+    assert code == 0, err
+    texts = [p.text for p in Document(str(f)).paragraphs]
+    assert "Plain paragraph with FIXED." in texts
+    # The hyperlinked paragraph is untouched and intact.
+    assert any("Visit our site" == t for t in texts)
+
+
+def test_docx_paragraph_op_on_hyperlink_paragraph_refuses(editdoc, tmp_path):
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("Anchor ")
+    add_hyperlink_run(p, "linked")
+    p.add_run(" tail")
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    before = sha256(f)
+    out, err, code = editdoc(f, {"start_contains": "Anchor", "new_text": "replaced"})
+    assert code == 1
+    assert "hyperlink" in err.lower() or "safely" in err.lower()
+    assert sha256(f) == before
+
+
+def test_docx_replace_in_merged_cell(editdoc, tmp_path):
+    # A horizontally-merged cell is one logical cell; a unique string in it must
+    # not be reported as matching twice.
+    doc = Document()
+    t = doc.add_table(rows=1, cols=2)
+    merged = t.rows[0].cells[0].merge(t.rows[0].cells[1])
+    merged.text = "MERGED unique target"
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    out, err, code = editdoc(
+        f, {"old_string": "MERGED unique target", "new_string": "done"}
+    )
+    assert code == 0, err
+    assert Document(str(f)).tables[0].rows[0].cells[0].text == "done"
+
+
+def test_docx_empty_start_contains_rejected(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["only para"])
+    before = sha256(f)
+    out, err, code = editdoc(f, {"start_contains": "", "new_text": "HIJACKED"})
+    assert code == 1
+    assert body_texts(f) == ["only para"]
+    assert sha256(f) == before
+
+
+def test_docx_empty_end_contains_rejected(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["alpha", "beta"])
+    out, err, code = editdoc(
+        f, {"start_contains": "alpha", "end_contains": "", "new_text": "x"}
+    )
+    assert code == 1
+
+
+def test_multiple_files_rejected(tmp_path):
+    # editdoc edits a single file; passing more than one must error, not silently
+    # edit only the first.
+    from conftest import run_cli
+
+    a = make_paras_docx(tmp_path / "a.docx", ["one"])
+    b = make_paras_docx(tmp_path / "b.docx", ["two"])
+    before_b = sha256(b)
+    out, err, code = run_cli(
+        "editdoc",
+        a,
+        b,
+        stdin='{"old_string": "one", "new_string": "X"}',
+    )
+    assert code == 1
+    assert "one file" in err.lower() or "single" in err.lower()
+    assert sha256(b) == before_b  # second file untouched

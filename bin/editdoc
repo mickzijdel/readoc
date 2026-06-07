@@ -81,8 +81,12 @@ def iter_doc_paragraphs(doc):
     for i, p in enumerate(doc.paragraphs, 1):
         units.append((p, f"paragraph {i} (body)"))
     for ti, table in enumerate(doc.tables, 1):
+        seen = set()  # a merged cell shows up once per grid position it spans
         for ri, row in enumerate(table.rows, 1):
             for ci, cell in enumerate(row.cells, 1):
+                if id(cell._tc) in seen:
+                    continue
+                seen.add(id(cell._tc))
                 for p in cell.paragraphs:
                     units.append((p, f"table {ti}, row {ri}, col {ci}"))
     return units
@@ -92,6 +96,21 @@ def paragraph_text(paragraph):
     """Visible text of a paragraph, reconstructed from its runs (the surface a
     match is tested against)."""
     return "".join(r.text for r in paragraph.runs)
+
+
+def ensure_rewritable(paragraph, index):
+    """Refuse to rewrite a paragraph whose visible text isn't fully carried by
+    its runs — e.g. it contains a hyperlink, field, or footnote reference whose
+    runs are nested in a wrapper element and therefore invisible to
+    ``paragraph.runs``. Rewriting such a paragraph would silently drop/scramble
+    that content, so we fail loudly instead and leave the document untouched."""
+    if paragraph.text != "".join(r.text for r in paragraph.runs):
+        raise EditError(
+            f"edit {index + 1}: paragraph contains content editdoc can't safely "
+            "rewrite (e.g. a hyperlink, field, or footnote reference) — edit not "
+            "applied to avoid corrupting it. Edit a different paragraph or adjust "
+            "the document first."
+        )
 
 
 def render_paragraph_markdown(paragraph):
@@ -214,6 +233,9 @@ def apply_text_replace(doc, edit, index):
     for para, label in iter_doc_paragraphs(doc):
         positions = find_all(paragraph_text(para), old)
         if positions:
+            # Guard before collecting (hence before any mutation): a hit in a
+            # hyperlink/field paragraph must abort the whole edit, not corrupt it.
+            ensure_rewritable(para, index)
             hits.append((para, label, positions))
             total += len(positions)
 
@@ -246,8 +268,12 @@ def iter_doc_containers(doc):
     from one container into another."""
     containers = [("body", list(doc.paragraphs))]
     for ti, table in enumerate(doc.tables, 1):
+        seen = set()  # a merged cell shows up once per grid position it spans
         for ri, row in enumerate(table.rows, 1):
             for ci, cell in enumerate(row.cells, 1):
+                if id(cell._tc) in seen:
+                    continue
+                seen.add(id(cell._tc))
                 containers.append(
                     (f"table {ti}, row {ri}, col {ci}", list(cell.paragraphs))
                 )
@@ -317,7 +343,17 @@ def apply_paragraph_op(doc, edit, index):
         raise EditError(
             f"edit {index + 1}: a paragraph op needs start_contains and new_text."
         )
+    if start == "":
+        raise EditError(
+            f"edit {index + 1}: start_contains must not be empty "
+            "(an empty anchor matches every paragraph)."
+        )
     end = edit.get("end_contains")
+    if end == "":
+        raise EditError(
+            f"edit {index + 1}: end_contains must not be empty "
+            "(an empty anchor matches every paragraph)."
+        )
 
     start_cid, start_pos = locate_anchor(doc, start, "start_contains", index)
     if end is not None:
@@ -351,6 +387,10 @@ def apply_paragraph_op(doc, edit, index):
         return outputs
 
     first = block[0]
+    # Rewriting the first paragraph in place would scramble it if it carries a
+    # hyperlink/field, so guard it. (Deleted paragraphs are removed whole and
+    # need no guard.)
+    ensure_rewritable(first, index)
     set_paragraph_text(first, lines[0])
     anchor = first
     for line in lines[1:]:
@@ -475,6 +515,12 @@ def main(argv=None):
     if not files:
         print(USAGE)
         sys.exit(1)
+
+    if len(files) > 1:
+        fail(
+            "Error: editdoc edits a single file at a time; got "
+            f"{len(files)}: {', '.join(files)}"
+        )
 
     filepath = files[0]
     if not os.path.exists(filepath):

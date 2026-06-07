@@ -167,7 +167,23 @@ Every edit is validated before the file is written; if any edit in a batch fails
 **nothing** is written (the file stays byte-identical) and `editdoc` exits
 non-zero with a specific error. Saves go through a temp file + atomic replace, so
 a crash never corrupts the original. Read the result back with `readoc` to
-confirm. Note: `editdoc` does not edit `.pdf` (no clean text reflow).
+confirm.
+
+### Limitations
+
+- **Hyperlinks / fields / footnote refs:** a paragraph whose text isn't carried
+  entirely by ordinary runs (it contains a hyperlink, field, or footnote
+  reference) is **refused** rather than rewritten — editing it would scramble the
+  non-run content. Delete the whole paragraph (range op with empty `new_text`) or
+  adjust the document instead. Such a paragraph can still be matched/deleted, just
+  not rewritten in place.
+- **Nested tables:** only top-level table cells are reached; text inside a table
+  nested within a cell is not found.
+- **xlsx fidelity:** openpyxl rewrites the whole workbook on save and can drop
+  features it doesn't model (charts, some data validations, macros). For
+  data/text edits this is fine; avoid `editdoc` on workbooks whose charts/macros
+  must survive.
+- **No `.pdf` editing** (no clean text reflow).
 
 ## Requirements
 [`uv`](https://docs.astral.sh/uv/) must be on `PATH`, it's the only prerequisite.
