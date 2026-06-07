@@ -152,7 +152,10 @@ def walk_files(root, max_depth=None, filter_exts=None, exclude_exts=None):
         current_depth = dirpath.rstrip(os.sep).count(os.sep) - root_depth
 
         dirnames.sort()
-        if max_depth is not None and current_depth >= max_depth:
+        # --max-depth N means N levels of listing: 1 = top level only, 2 = one
+        # level of subdirectories, etc. (matching `find -maxdepth N`). Stop
+        # descending once the *children* would exceed that depth.
+        if max_depth is not None and current_depth + 1 >= max_depth:
             dirnames.clear()
 
         for fname in sorted(filenames):
@@ -333,7 +336,7 @@ Usage:
 
 Examples:
   readir tree ./docs --summary                 Tree with extension summary
-  readir tree ./docs --max-depth 2             Limit depth
+  readir tree ./docs --max-depth 1             Top level only (2 = one level deep)
   readir tree ./docs --filter docx,pdf         Only show certain types
 
   readir read ./docs                           Read everything readable
@@ -365,7 +368,10 @@ def main():
     p_tree = subparsers.add_parser("tree", help="Show file tree with sizes")
     p_tree.add_argument("path", help="Directory to explore")
     p_tree.add_argument(
-        "--max-depth", type=int, default=None, help="Limit recursion depth"
+        "--max-depth",
+        type=int,
+        default=None,
+        help="Levels to list: 1 = top level only, 2 = one level deep, etc.",
     )
     p_tree.add_argument(
         "--filter",
@@ -381,7 +387,10 @@ def main():
     p_read = subparsers.add_parser("read", help="Concat all readable files")
     p_read.add_argument("path", help="Directory to read")
     p_read.add_argument(
-        "--max-depth", type=int, default=None, help="Limit recursion depth"
+        "--max-depth",
+        type=int,
+        default=None,
+        help="Levels to list: 1 = top level only, 2 = one level deep, etc.",
     )
     p_read.add_argument(
         "--filter",

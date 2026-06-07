@@ -32,7 +32,7 @@ preserved; long cells overflow their column rather than being cut.
 # Tree — explore structure
 readir tree path/to/folder                    # file tree with sizes
 readir tree path/to/folder --summary          # + extension/size summary
-readir tree path/to/folder --max-depth 2      # limit recursion depth
+readir tree path/to/folder --max-depth 1      # depth: 1 = top level only, 2 = one level deep
 readir tree path/to/folder --filter docx,pdf  # only certain extensions
 
 # Read — concatenate all readable files (same header-box convention as readoc)

@@ -46,12 +46,18 @@ def test_walk_files_reports_sizes(readir_mod, sample_tree):
     assert big > 2000
 
 
-def test_walk_files_max_depth_prunes(readir_mod, sample_tree):
-    # max_depth=1 descends one level (root + sub/) but prunes sub/deeper/.
+def test_walk_files_max_depth_1_is_top_level_only(readir_mod, sample_tree):
+    # --max-depth 1 = immediate contents only, like `find -maxdepth 1`.
     rels = [rel for rel, _f, _s in readir_mod.walk_files(str(sample_tree), max_depth=1)]
     assert "top.md" in rels
-    assert any(rel.endswith("report.docx") for rel in rels)
-    assert not any(rel.endswith("deepfile.txt") for rel in rels)
+    assert not any(os.sep in rel for rel in rels)  # nothing below the root
+
+
+def test_walk_files_max_depth_2_descends_one_level(readir_mod, sample_tree):
+    # --max-depth 2 = root + one level of subdirectories, pruning deeper.
+    rels = [rel for rel, _f, _s in readir_mod.walk_files(str(sample_tree), max_depth=2)]
+    assert any(rel.endswith("report.docx") for rel in rels)  # depth-1 file shown
+    assert not any(rel.endswith("deepfile.txt") for rel in rels)  # depth-2 pruned
 
 
 def test_walk_files_filter_and_exclude(readir_mod, sample_tree):
@@ -114,11 +120,18 @@ def test_tree_summary(readir, sample_tree):
 
 
 def test_tree_max_depth(readir, sample_tree):
+    # --max-depth 1 shows only the top level.
     out, _, code = readir("tree", sample_tree, "--max-depth", "1")
     assert code == 0
     assert "top.md" in out
-    assert "report.docx" in out  # depth-1 file still shown
-    assert "deepfile.txt" not in out  # depth-2 file pruned
+    assert "report.docx" not in out  # depth-1 file pruned at depth 1
+    assert "deepfile.txt" not in out
+
+    # --max-depth 2 descends one level into subdirectories.
+    out2, _, code2 = readir("tree", sample_tree, "--max-depth", "2")
+    assert code2 == 0
+    assert "report.docx" in out2  # depth-1 file now shown
+    assert "deepfile.txt" not in out2  # depth-2 still pruned
 
 
 def test_tree_filter(readir, sample_tree):
