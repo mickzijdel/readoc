@@ -20,11 +20,20 @@ readoc file.docx                 # read a Word document
 readoc file.xlsx                 # read an Excel spreadsheet
 readoc file.pdf                  # read a PDF
 readoc file1.docx file2.xlsx     # read several; each gets a header box
+readoc --no-comments file.docx   # omit comments (included by default)
 ```
 
 Each file is preceded by an unambiguous header box (`path (Type, size)`), so
 concatenated output is never confusing. Headings, tables, and sheets are
 preserved; long cells overflow their column rather than being cut.
+
+### Comments
+Document comments are **included by default**, appended per file in a trailing
+`--- Comments ---` block with the author and an anchor — Word comments
+(`author: text`), Excel cell comments (`[Sheet!A1] author: text`), and PDF
+annotations / sticky notes (`[Page N] author: text`). Pass `--no-comments` to
+suppress them (body text is unaffected). The block is only emitted when a file
+actually has comments.
 
 ## `readir` — explore / read / search a folder
 
@@ -43,12 +52,18 @@ readir read path/to/folder --max-size 2000    # KB ceiling; files over it are
                                               # SKIPPED (and listed), not truncated
 readir read path/to/folder --max-depth 1
 readir read path/to/folder --no-skip-report
+readir read path/to/folder --no-comments      # omit comments (included by default)
 
 # Search — grep across all docs (incl. docx/xlsx/pdf)
 readir search path/to/folder "query"
 readir search path/to/folder "query" --context 5   # lines of context (default 2)
 readir search path/to/folder "query" --filter docx
+readir search path/to/folder "query" --no-comments # don't search comment text
 ```
+
+Comments are extracted by default for `readir read` (and are searchable by
+`readir search`), in the same `--- Comments ---` form as `readoc`. Use
+`--no-comments` on either to opt out.
 
 Supported formats: `.md .txt .csv .docx .xlsx .pdf .json .yaml .yml`.
 

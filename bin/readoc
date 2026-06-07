@@ -38,7 +38,66 @@ def print_header(path, ext, size):
     print()
 
 
-def read_pdf(path):
+def print_comments(comments):
+    """Print a trailing Comments section, but only when there are comments."""
+    if not comments:
+        return
+    print("\n--- Comments ---")
+    for line in comments:
+        print(line)
+
+
+def docx_comments(doc):
+    """Return formatted comment lines from a python-docx Document, or []."""
+    try:
+        return [f"{(c.author or 'Unknown')}: {c.text}".rstrip() for c in doc.comments]
+    except Exception:
+        return []
+
+
+def xlsx_comments(path):
+    """Return formatted cell-comment lines. Requires a non-read_only load, since
+    read-only cells expose no comment attribute."""
+    from openpyxl import load_workbook
+
+    lines = []
+    try:
+        wb = load_workbook(path, read_only=False, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    comment = cell.comment
+                    if comment and (comment.text or "").strip():
+                        author = (comment.author or "Unknown").strip() or "Unknown"
+                        text = comment.text.strip()
+                        lines.append(
+                            f"[{sheet_name}!{cell.coordinate}] {author}: {text}"
+                        )
+        wb.close()
+    except Exception:
+        return []
+    return lines
+
+
+def pdf_comments(doc):
+    """Return formatted annotation-comment lines from a PyMuPDF document, or []."""
+    lines = []
+    try:
+        for page_num, page in enumerate(doc, 1):
+            for annot in page.annots() or []:
+                info = annot.info
+                content = (info.get("content") or "").strip()
+                if not content:
+                    continue
+                author = (info.get("title") or "Unknown").strip() or "Unknown"
+                lines.append(f"[Page {page_num}] {author}: {content}")
+    except Exception:
+        return []
+    return lines
+
+
+def read_pdf(path, include_comments=True):
     import fitz  # PyMuPDF
 
     doc = fitz.open(path)
@@ -48,10 +107,12 @@ def read_pdf(path):
             if len(doc) > 1:
                 print(f"\n--- Page {page_num} ---\n")
             print(text)
+    if include_comments:
+        print_comments(pdf_comments(doc))
     doc.close()
 
 
-def read_docx(path):
+def read_docx(path, include_comments=True):
     from docx import Document
 
     doc = Document(path)
@@ -76,8 +137,11 @@ def read_docx(path):
                 cells = [cell.text.strip() for cell in row.cells]
                 print(" | ".join(cells))
 
+    if include_comments:
+        print_comments(docx_comments(doc))
 
-def read_xlsx(path):
+
+def read_xlsx(path, include_comments=True):
     from openpyxl import load_workbook
 
     wb = load_workbook(path, read_only=True, data_only=True)
@@ -119,21 +183,41 @@ def read_xlsx(path):
 
     wb.close()
 
+    if include_comments:
+        print_comments(xlsx_comments(path))
+
 
 READERS = {".docx": read_docx, ".xlsx": read_xlsx, ".pdf": read_pdf}
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: readoc <file.docx|file.xlsx|file.pdf> [file2 ...]")
+    # Lightweight flag handling: comments are included by default; --no-comments
+    # turns them off. --comments is accepted as a harmless explicit opt-in.
+    include_comments = True
+    files = []
+    for arg in sys.argv[1:]:
+        if arg == "--no-comments":
+            include_comments = False
+        elif arg == "--comments":
+            include_comments = True
+        else:
+            files.append(arg)
+
+    if not files:
+        print(
+            "Usage: readoc [--no-comments] <file.docx|file.xlsx|file.pdf> [file2 ...]"
+        )
         print(
             "\nReads .docx, .xlsx, and .pdf files and outputs their content as plain text."
         )
         print("Each file is preceded by a header box (path, type, size).")
+        print(
+            "Document comments are included by default; pass --no-comments to omit them."
+        )
         sys.exit(1)
 
     exit_code = 0
-    for filepath in sys.argv[1:]:
+    for filepath in files:
         if not os.path.exists(filepath):
             print(f"Error: File not found: {filepath}", file=sys.stderr)
             exit_code = 1
@@ -154,7 +238,7 @@ def main():
             size = 0
 
         print_header(filepath, ext, size)
-        READERS[ext](filepath)
+        READERS[ext](filepath, include_comments)
         print()
 
     sys.exit(exit_code)

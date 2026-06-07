@@ -1,11 +1,11 @@
 {
   "name": "readoc",
-  "description": "Read Office documents (.docx, .xlsx, .pdf) and whole folders of mixed documents as plain text. Ships the readoc (single/multi file) and readir (tree/read/search a folder) CLIs plus a reading-documents skill. Output is never truncated.",
-  "version": "1.0.0",
+  "description": "Read Office documents (.docx, .xlsx, .pdf) and whole folders of mixed documents as plain text, including embedded comments/annotations by default. Ships the readoc (single/multi file) and readir (tree/read/search a folder) CLIs plus a reading-documents skill. Output is never truncated.",
+  "version": "1.1.0",
   "author": {
     "name": "Mick Zijdel"
   },
   "repository": "https://github.com/mickzijdel/readoc",
   "license": "MIT",
-  "keywords": ["docx", "xlsx", "pdf", "documents", "office", "reading"]
+  "keywords": ["docx", "xlsx", "pdf", "documents", "office", "reading", "comments"]
 }

@@ -13,6 +13,14 @@ as plain text — without truncation.
 Both are exposed as the `reading-documents` skill (`readoc:reading-documents`) and
 are symlinked onto `PATH` for direct CLI use.
 
+## Comments
+
+Document comments are extracted by default and appended per file in a trailing
+`--- Comments ---` block with the author and an anchor: Word comments
+(`author: text`), Excel cell comments (`[Sheet!A1] author: text`), and PDF
+annotations / sticky notes (`[Page N] author: text`). Pass `--no-comments` to
+`readoc`, `readir read`, or `readir search` to omit them.
+
 ## No truncation
 
 Spreadsheet cells, PDF pages, and tables are emitted in full — long cells overflow

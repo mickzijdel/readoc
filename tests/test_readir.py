@@ -4,6 +4,23 @@ import os
 
 import pytest
 
+from conftest import make_docx
+
+
+@pytest.fixture
+def commented_tree(tmp_path):
+    """A folder with a single .docx carrying a comment whose text appears nowhere
+    in the body — so any match/echo of it must come from comment extraction."""
+    root = tmp_path / "ctree"
+    root.mkdir()
+    make_docx(
+        root / "reviewed.docx",
+        body="Ordinary body paragraph.",
+        table=False,
+        comments=[("xyzzy-comment-marker", "Reviewer")],
+    )
+    return root
+
 
 # --- Unit: parse_extensions ---
 
@@ -195,6 +212,25 @@ def test_read_empty_dir(readir, tmp_path):
     assert "(no files found)" in out
 
 
+# --- Integration: read comments ---
+
+
+def test_read_includes_comments_by_default(readir, commented_tree):
+    out, err, code = readir("read", commented_tree)
+    assert code == 0, err
+    assert "--- Comments ---" in out
+    assert "Reviewer: xyzzy-comment-marker" in out
+    assert "Ordinary body paragraph." in out
+
+
+def test_read_no_comments_flag_suppresses(readir, commented_tree):
+    out, _, code = readir("read", commented_tree, "--no-comments")
+    assert code == 0
+    assert "--- Comments ---" not in out
+    assert "xyzzy-comment-marker" not in out
+    assert "Ordinary body paragraph." in out
+
+
 # --- Integration: search ---
 
 
@@ -222,6 +258,21 @@ def test_search_filter(readir, sample_tree):
 
 def test_search_no_matches(readir, sample_tree):
     out, _, code = readir("search", sample_tree, "zzz-nonexistent-zzz")
+    assert code == 0
+    assert "No matches found" in out
+
+
+def test_search_matches_comment_text_by_default(readir, commented_tree):
+    out, err, code = readir("search", commented_tree, "xyzzy-comment-marker")
+    assert code == 0, err
+    assert "reviewed.docx" in out
+    assert "total match" in out
+
+
+def test_search_no_comments_excludes_comment_text(readir, commented_tree):
+    out, _, code = readir(
+        "search", commented_tree, "xyzzy-comment-marker", "--no-comments"
+    )
     assert code == 0
     assert "No matches found" in out
 

@@ -89,13 +89,18 @@ def make_docx(
     heading2="A Subsection",
     body="Just a plain paragraph of body text.",
     table=True,
+    comments=None,
 ):
-    """Write a .docx with headings, a body paragraph, and (optionally) a table."""
+    """Write a .docx with headings, a body paragraph, and (optionally) a table.
+
+    ``comments`` is an optional list of ``(text, author)`` tuples; each is attached
+    as a Word comment anchored to the body paragraph.
+    """
     from docx import Document
 
     doc = Document()
     doc.add_heading(heading1, level=1)
-    doc.add_paragraph(body)
+    body_para = doc.add_paragraph(body)
     doc.add_heading(heading2, level=2)
     if table:
         t = doc.add_table(rows=2, cols=2)
@@ -103,13 +108,22 @@ def make_docx(
         t.rows[0].cells[1].text = "Value"
         t.rows[1].cells[0].text = "alpha"
         t.rows[1].cells[1].text = "42"
+    for text, author in comments or []:
+        doc.add_comment(runs=body_para.runs, text=text, author=author)
     doc.save(str(path))
     return path
 
 
-def make_xlsx(path, long_cell=LONG_CELL, multi_sheet=True, empty_sheet=True):
-    """Write an .xlsx with a long cell, optional extra sheet, optional empty sheet."""
+def make_xlsx(
+    path, long_cell=LONG_CELL, multi_sheet=True, empty_sheet=True, comments=None
+):
+    """Write an .xlsx with a long cell, optional extra sheet, optional empty sheet.
+
+    ``comments`` is an optional list of ``(coord, text, author)`` tuples written to
+    the active "Data" sheet.
+    """
     from openpyxl import Workbook
+    from openpyxl.comments import Comment
 
     wb = Workbook()
     ws = wb.active
@@ -123,18 +137,30 @@ def make_xlsx(path, long_cell=LONG_CELL, multi_sheet=True, empty_sheet=True):
         ws2.append([10, 20])
     if empty_sheet:
         wb.create_sheet("Blank")
+    for coord, text, author in comments or []:
+        ws[coord].comment = Comment(text, author)
     wb.save(str(path))
     return path
 
 
-def make_pdf(path, pages=("Hello from page one.",)):
-    """Write a .pdf with one text block per entry in ``pages``."""
+def make_pdf(path, pages=("Hello from page one.",), comments=None):
+    """Write a .pdf with one text block per entry in ``pages``.
+
+    ``comments`` is an optional list of ``(page_index, text, author)`` tuples; each
+    is added as a text (sticky-note) annotation on the given page.
+    """
     import fitz
 
     doc = fitz.open()
+    pages_list = []
     for text in pages:
         page = doc.new_page()
         page.insert_text((72, 72), text)
+        pages_list.append(page)
+    for page_index, text, author in comments or []:
+        annot = pages_list[page_index].add_text_annot((200, 200), text)
+        annot.set_info(title=author)
+        annot.update()
     doc.save(str(path))
     doc.close()
     return path
@@ -153,6 +179,30 @@ def xlsx_file(tmp_path):
 @pytest.fixture
 def pdf_file(tmp_path):
     return make_pdf(tmp_path / "single.pdf")
+
+
+@pytest.fixture
+def docx_with_comments(tmp_path):
+    return make_docx(
+        tmp_path / "commented.docx",
+        comments=[("First reviewer note", "Alice"), ("Second note", "Bob")],
+    )
+
+
+@pytest.fixture
+def xlsx_with_comments(tmp_path):
+    return make_xlsx(
+        tmp_path / "commented.xlsx",
+        comments=[("A1", "Header looks off", "Carol")],
+    )
+
+
+@pytest.fixture
+def pdf_with_comments(tmp_path):
+    return make_pdf(
+        tmp_path / "commented.pdf",
+        comments=[(0, "A sticky note here", "Dave")],
+    )
 
 
 @pytest.fixture

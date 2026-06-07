@@ -101,6 +101,73 @@ def test_pdf_multipage_separators(readoc, multipage_pdf):
     assert "Content of the second page." in out
 
 
+# --- Integration: comments ---
+
+
+def test_docx_comments_included_by_default(readoc, docx_with_comments):
+    out, err, code = readoc(docx_with_comments)
+    assert code == 0, err
+    assert "--- Comments ---" in out
+    assert "Alice: First reviewer note" in out
+    assert "Bob: Second note" in out
+    # Body text still present.
+    assert "Just a plain paragraph of body text." in out
+
+
+def test_docx_comments_suppressed_with_flag(readoc, docx_with_comments):
+    out, err, code = readoc("--no-comments", docx_with_comments)
+    assert code == 0, err
+    assert "--- Comments ---" not in out
+    assert "First reviewer note" not in out
+    # Body text unaffected.
+    assert "Just a plain paragraph of body text." in out
+
+
+def test_xlsx_comments_included_by_default(readoc, xlsx_with_comments):
+    out, err, code = readoc(xlsx_with_comments)
+    assert code == 0, err
+    assert "--- Comments ---" in out
+    assert "[Data!A1]" in out
+    assert "Carol: Header looks off" in out
+
+
+def test_xlsx_comments_suppressed_with_flag(readoc, xlsx_with_comments):
+    out, _, code = readoc("--no-comments", xlsx_with_comments)
+    assert code == 0
+    assert "--- Comments ---" not in out
+    assert "Header looks off" not in out
+
+
+def test_pdf_comments_included_by_default(readoc, pdf_with_comments):
+    out, err, code = readoc(pdf_with_comments)
+    assert code == 0, err
+    assert "--- Comments ---" in out
+    assert "[Page 1]" in out
+    assert "Dave: A sticky note here" in out
+
+
+def test_pdf_comments_suppressed_with_flag(readoc, pdf_with_comments):
+    out, _, code = readoc("--no-comments", pdf_with_comments)
+    assert code == 0
+    assert "--- Comments ---" not in out
+    assert "A sticky note here" not in out
+
+
+def test_no_comment_block_when_no_comments(readoc, docx_file, xlsx_file, pdf_file):
+    # Comment-free fixtures must not emit a spurious Comments header.
+    out, _, code = readoc(docx_file, xlsx_file, pdf_file)
+    assert code == 0
+    assert "--- Comments ---" not in out
+
+
+def test_no_comments_flag_not_treated_as_path(readoc, docx_file):
+    # The flag must be stripped from the file list, not parsed as a filename.
+    out, err, code = readoc("--no-comments", docx_file)
+    assert code == 0, err
+    assert "File not found" not in err
+    assert "# Main Title" in out
+
+
 # --- Integration: multiple files ---
 
 

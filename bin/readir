@@ -18,7 +18,64 @@ import io
 # --- File readers (self-contained, mirroring readoc) ---
 
 
-def read_pdf_text(path):
+def comments_block(comments):
+    """Render a trailing Comments section, or '' when there are no comments."""
+    if not comments:
+        return ""
+    return "\n--- Comments ---\n" + "\n".join(comments)
+
+
+def docx_comments(doc):
+    """Return formatted comment lines from a python-docx Document, or []."""
+    try:
+        return [f"{(c.author or 'Unknown')}: {c.text}".rstrip() for c in doc.comments]
+    except Exception:
+        return []
+
+
+def xlsx_comments(path):
+    """Return formatted cell-comment lines. Requires a non-read_only load, since
+    read-only cells expose no comment attribute."""
+    from openpyxl import load_workbook
+
+    lines = []
+    try:
+        wb = load_workbook(path, read_only=False, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            for row in ws.iter_rows():
+                for cell in row:
+                    comment = cell.comment
+                    if comment and (comment.text or "").strip():
+                        author = (comment.author or "Unknown").strip() or "Unknown"
+                        text = comment.text.strip()
+                        lines.append(
+                            f"[{sheet_name}!{cell.coordinate}] {author}: {text}"
+                        )
+        wb.close()
+    except Exception:
+        return []
+    return lines
+
+
+def pdf_comments(doc):
+    """Return formatted annotation-comment lines from a PyMuPDF document, or []."""
+    lines = []
+    try:
+        for page_num, page in enumerate(doc, 1):
+            for annot in page.annots() or []:
+                info = annot.info
+                content = (info.get("content") or "").strip()
+                if not content:
+                    continue
+                author = (info.get("title") or "Unknown").strip() or "Unknown"
+                lines.append(f"[Page {page_num}] {author}: {content}")
+    except Exception:
+        return []
+    return lines
+
+
+def read_pdf_text(path, include_comments=True):
     import fitz
 
     lines = []
@@ -29,11 +86,13 @@ def read_pdf_text(path):
             if len(doc) > 1:
                 lines.append(f"\n--- Page {page_num} ---\n")
             lines.append(text)
+    block = comments_block(pdf_comments(doc)) if include_comments else ""
     doc.close()
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    return text + ("\n" + block if block else "")
 
 
-def read_docx_text(path):
+def read_docx_text(path, include_comments=True):
     from docx import Document
 
     lines = []
@@ -56,10 +115,14 @@ def read_docx_text(path):
             for row in table.rows:
                 cells = [cell.text.strip() for cell in row.cells]
                 lines.append(" | ".join(cells))
+    if include_comments:
+        block = comments_block(docx_comments(doc))
+        if block:
+            lines.append(block)
     return "\n".join(lines)
 
 
-def read_xlsx_text(path):
+def read_xlsx_text(path, include_comments=True):
     from openpyxl import load_workbook
 
     buf = io.StringIO()
@@ -93,7 +156,12 @@ def read_xlsx_text(path):
                 buf.write("-+-".join("-" * w for w in col_widths) + "\n")
         buf.write("\n")
     wb.close()
-    return buf.getvalue()
+    result = buf.getvalue()
+    if include_comments:
+        block = comments_block(xlsx_comments(path))
+        if block:
+            result += block + "\n"
+    return result
 
 
 def read_text_file(path):
@@ -113,18 +181,18 @@ READABLE_SPECIAL = {".docx", ".xlsx", ".pdf"}
 READABLE_ALL = READABLE_TEXT | READABLE_SPECIAL
 
 
-def read_file_content(path):
+def read_file_content(path, include_comments=True):
     """Read a file and return its text content, or None on failure."""
     ext = os.path.splitext(path)[1].lower()
     try:
         if ext in READABLE_TEXT:
             return read_text_file(path)
         elif ext == ".docx":
-            return read_docx_text(path)
+            return read_docx_text(path, include_comments)
         elif ext == ".xlsx":
-            return read_xlsx_text(path)
+            return read_xlsx_text(path, include_comments)
         elif ext == ".pdf":
-            return read_pdf_text(path)
+            return read_pdf_text(path, include_comments)
     except Exception as e:
         print(f"  Warning: Failed to read {path}: {e}", file=sys.stderr)
     return None
@@ -246,7 +314,7 @@ def cmd_read(args):
             skipped.append((rel, f"too large ({human_size(size)})"))
             continue
 
-        content = read_file_content(full)
+        content = read_file_content(full, include_comments=not args.no_comments)
         if content is None:
             skipped.append((rel, "read error"))
             continue
@@ -288,7 +356,7 @@ def cmd_search(args):
         if size > 500 * 1024:
             continue
 
-        content = read_file_content(full)
+        content = read_file_content(full, include_comments=not args.no_comments)
         if content is None:
             continue
 
@@ -343,6 +411,7 @@ Examples:
   readir read ./docs --filter md,csv           Only read markdown and CSV
   readir read ./docs --max-size 200            Skip files > 200 KB
   readir read ./docs --exclude pdf             Skip PDFs
+  readir read ./docs --no-comments             Omit document comments
 
   readir search ./docs "budget"                Search all docs for "budget"
   readir search ./docs "risk" --context 5      More context around matches
@@ -413,6 +482,11 @@ def main():
     p_read.add_argument(
         "--no-skip-report", action="store_true", help="Suppress skipped files list"
     )
+    p_read.add_argument(
+        "--no-comments",
+        action="store_true",
+        help="Omit document comments (included by default)",
+    )
 
     # search
     p_search = subparsers.add_parser("search", help="Search across all documents")
@@ -429,6 +503,11 @@ def main():
         type=str,
         default=None,
         help="Only search these extensions (comma-separated)",
+    )
+    p_search.add_argument(
+        "--no-comments",
+        action="store_true",
+        help="Don't search document comments (searched by default)",
     )
 
     args = parser.parse_args()
