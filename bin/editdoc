@@ -23,9 +23,11 @@ crash-safely (temp file + atomic replace), so a failure leaves the original
 byte-for-byte intact.
 """
 
+import copy
 import json
 import os
 import sys
+import tempfile
 
 
 SUPPORTED = {".docx", ".xlsx"}
@@ -67,8 +69,210 @@ def load_spec(raw):
     return data
 
 
+# --- docx: paragraph traversal, rendering, run-level rewrite ---
+
+
+def iter_doc_paragraphs(doc):
+    """Yield (paragraph, location_label) for every editable paragraph in document
+    order: body paragraphs first, then each top-level table cell's paragraphs.
+
+    The label is human-facing only (used in success output)."""
+    units = []
+    for i, p in enumerate(doc.paragraphs, 1):
+        units.append((p, f"paragraph {i} (body)"))
+    for ti, table in enumerate(doc.tables, 1):
+        for ri, row in enumerate(table.rows, 1):
+            for ci, cell in enumerate(row.cells, 1):
+                for p in cell.paragraphs:
+                    units.append((p, f"table {ti}, row {ri}, col {ci}"))
+    return units
+
+
+def paragraph_text(paragraph):
+    """Visible text of a paragraph, reconstructed from its runs (the surface a
+    match is tested against)."""
+    return "".join(r.text for r in paragraph.runs)
+
+
+def render_paragraph_markdown(paragraph):
+    """Render a paragraph as Markdown (bold/italic spans, heading prefix) so an
+    edit's result can be eyeballed for formatting."""
+    parts = []
+    for r in paragraph.runs:
+        t = r.text
+        if not t:
+            continue
+        if r.italic:
+            t = f"*{t}*"
+        if r.bold:
+            t = f"**{t}**"
+        parts.append(t)
+    text = "".join(parts)
+    style = paragraph.style.name if paragraph.style else ""
+    if style.startswith("Heading"):
+        level = style.replace("Heading ", "").strip()
+        try:
+            prefix = "#" * int(level) + " "
+        except ValueError:
+            prefix = "# "
+        return prefix + text
+    return text
+
+
+def find_all(haystack, needle):
+    """Non-overlapping match start offsets of needle in haystack."""
+    positions = []
+    i = 0
+    while True:
+        j = haystack.find(needle, i)
+        if j == -1:
+            break
+        positions.append(j)
+        i = j + len(needle)
+    return positions
+
+
+def _copy_run_format(dst_run, src_run):
+    """Copy character formatting (the run's rPr) from src_run onto dst_run."""
+    from docx.oxml.ns import qn
+
+    dst_el = dst_run._element
+    existing = dst_el.find(qn("w:rPr"))
+    if existing is not None:
+        dst_el.remove(existing)
+    src_rpr = src_run._element.find(qn("w:rPr"))
+    if src_rpr is not None:
+        dst_el.insert(0, copy.deepcopy(src_rpr))
+
+
+def replace_in_paragraph(paragraph, old, new, positions):
+    """Replace the matches of ``old`` at the given start ``positions`` with ``new``.
+
+    Works at character granularity: every original character is tagged with its
+    source run; replacement characters inherit the *first spanned run's* tag.
+    The paragraph's runs are then rebuilt by grouping consecutive same-tag
+    characters and copying each source run's formatting — so untouched text keeps
+    its exact formatting and replacements take the first run's.
+    """
+    runs = list(paragraph.runs)
+    # Tag each original character with its source run index.
+    tags = []  # list of (char, run_index)
+    for ri, r in enumerate(runs):
+        for ch in r.text:
+            tags.append((ch, ri))
+
+    end_of = {pos: pos + len(old) for pos in positions}
+    result = []  # rebuilt list of (char, run_index)
+    cursor = 0
+    for pos in sorted(positions):
+        result.extend(tags[cursor:pos])
+        first_run_idx = tags[pos][1] if pos < len(tags) else (len(runs) - 1)
+        for ch in new:
+            result.append((ch, first_run_idx))
+        cursor = end_of[pos]
+    result.extend(tags[cursor:])
+
+    # Group consecutive characters sharing a source run into output segments.
+    groups = []  # list of [text, run_index]
+    for ch, idx in result:
+        if groups and groups[-1][1] == idx:
+            groups[-1][0] += ch
+        else:
+            groups.append([ch, idx])
+
+    # Replace the paragraph's runs wholesale, restoring each segment's formatting.
+    for r in runs:
+        r._element.getparent().remove(r._element)
+    for text, idx in groups:
+        new_run = paragraph.add_run(text)
+        if runs:
+            _copy_run_format(new_run, runs[min(idx, len(runs) - 1)])
+
+
+# --- docx: edit application ---
+
+
+def apply_text_replace(doc, edit, index):
+    old = edit.get("old_string")
+    new = edit.get("new_string")
+    if old is None or new is None:
+        raise EditError(
+            f"edit {index + 1}: a text replace needs both old_string and new_string."
+        )
+    if old == "":
+        raise EditError(f"edit {index + 1}: old_string must not be empty.")
+    if "\n" in old:
+        raise EditError(
+            f"edit {index + 1}: old_string spans a paragraph break (contains a "
+            "newline). In-paragraph replace works within a single paragraph; use "
+            "a paragraph op (start_contains/end_contains) for multi-paragraph edits."
+        )
+    replace_all = bool(edit.get("replace_all", False))
+
+    hits = []  # (paragraph, label, positions)
+    total = 0
+    for para, label in iter_doc_paragraphs(doc):
+        positions = find_all(paragraph_text(para), old)
+        if positions:
+            hits.append((para, label, positions))
+            total += len(positions)
+
+    if total == 0:
+        raise EditError(f'edit {index + 1}: old_string not found: "{old}"')
+    if total > 1 and not replace_all:
+        raise EditError(
+            f'edit {index + 1}: old_string "{old}" matches {total} times — '
+            "add surrounding context to make it unique, or set replace_all=true."
+        )
+
+    outputs = []
+    for para, label, positions in hits:
+        replace_in_paragraph(para, old, new, positions)
+        n = len(positions)
+        outputs.append(
+            f"✓ edit {index + 1}: replaced {n} occurrence"
+            f"{'' if n == 1 else 's'} in {label}"
+        )
+        outputs.append("  └ " + render_paragraph_markdown(para))
+    return outputs
+
+
+def apply_one_docx_edit(doc, edit, index):
+    if "old_string" in edit:
+        return apply_text_replace(doc, edit, index)
+    raise EditError(
+        f"edit {index + 1}: unrecognized docx edit — expected old_string "
+        "(text replace) or start_contains (paragraph op)."
+    )
+
+
+def save_atomic(save_fn, path):
+    """Save via a temp file in the same directory, then atomically replace the
+    target — a crash mid-save never corrupts the original."""
+    directory = os.path.dirname(os.path.abspath(path))
+    ext = os.path.splitext(path)[1]
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=ext)
+    os.close(fd)
+    try:
+        save_fn(tmp)
+        os.replace(tmp, path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+
+
 def apply_docx_edits(path, edits):
-    raise NotImplementedError
+    from docx import Document
+
+    doc = Document(path)
+    outputs = []
+    for i, edit in enumerate(edits):
+        outputs.extend(apply_one_docx_edit(doc, edit, i))
+    # Reached only if every edit applied without raising; save once, atomically.
+    save_atomic(doc.save, path)
+    if outputs:
+        print("\n".join(outputs))
 
 
 def apply_xlsx_edits(path, edits):
