@@ -166,6 +166,73 @@ def make_pdf(path, pages=("Hello from page one.",), comments=None):
     return path
 
 
+# Distinctive paragraphs for context-window search tests. Only P2 mentions the
+# search term "budget"; FARWORD lives two paragraphs away, so a ±1 paragraph
+# window must exclude it while still including its immediate neighbours.
+PROSE_PARAS = [
+    "Intro paragraph about onboarding new staff.",
+    "The budget paragraph discusses overruns in detail.",
+    "Hiring plans are covered in this neighbour paragraph.",
+    "FARWORD marks a distant paragraph that should stay hidden.",
+]
+
+
+def make_prose_docx(path, paras=PROSE_PARAS, heading="Quarterly Report"):
+    """Write a multi-paragraph .docx for paragraph/char context search tests."""
+    from docx import Document
+
+    doc = Document()
+    doc.add_heading(heading, level=1)
+    for p in paras:
+        doc.add_paragraph(p)
+    doc.save(str(path))
+    return path
+
+
+def make_search_xlsx(path):
+    """Write an .xlsx with known coordinates: headers in row 1, row headers in
+    column A, the term 'overrun' at C3 (Budget!C3), and a cell comment on B3."""
+    from openpyxl import Workbook
+    from openpyxl.comments import Comment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Budget"
+    ws.append(["Quarter", "Amount", "Notes"])
+    ws.append(["Q1", 1000, "on track"])
+    ws.append(["Q2", 2500, "budget overrun here"])
+    ws.append(["Q3", 1800, "stable"])
+    ws["B3"].comment = Comment("double-check this amount", "Reviewer")
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def prose_docx(tmp_path):
+    return make_prose_docx(tmp_path / "report.docx")
+
+
+@pytest.fixture
+def search_xlsx(tmp_path):
+    return make_search_xlsx(tmp_path / "sheet.xlsx")
+
+
+@pytest.fixture
+def search_tree(tmp_path):
+    """A folder mixing a multi-paragraph docx, a coordinate-known xlsx, and a
+    single-long-line txt — the substrate for the readir search-mode tests."""
+    root = tmp_path / "searchtree"
+    root.mkdir()
+    make_prose_docx(root / "report.docx")
+    make_search_xlsx(root / "sheet.xlsx")
+    # One long physical line so --context-chars has room to window around a match.
+    (root / "blob.txt").write_text(
+        "alpha beta gamma delta the budget line continues onward epsilon zeta eta " * 3,
+        encoding="utf-8",
+    )
+    return root
+
+
 @pytest.fixture
 def docx_file(tmp_path):
     return make_docx(tmp_path / "doc.docx")

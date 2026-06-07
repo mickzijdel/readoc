@@ -16,6 +16,8 @@ same convention used by `readir read`, so concatenated output is never confusing
 
 import sys
 import os
+import io
+import re
 
 TYPE_LABELS = {".docx": "Word", ".xlsx": "Excel", ".pdf": "PDF"}
 
@@ -190,7 +192,454 @@ def read_xlsx(path, include_comments=True):
 READERS = {".docx": read_docx, ".xlsx": read_xlsx, ".pdf": read_pdf}
 
 
+# --- Return-style readers (for `readoc search`; the readers above print) ---
+#
+# These mirror readir's text-returning readers so the search helpers below can
+# operate on a single file. The print-style readers above are left untouched so
+# the normal read path keeps its exact, tested output.
+
+READABLE_TEXT = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
+READABLE_SPECIAL = {".docx", ".xlsx", ".pdf"}
+READABLE_ALL = READABLE_TEXT | READABLE_SPECIAL
+
+
+def comments_block(comments):
+    if not comments:
+        return ""
+    return "\n--- Comments ---\n" + "\n".join(comments)
+
+
+def read_text_file(path):
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            with open(path, "r", encoding=encoding) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
+def read_pdf_text(path, include_comments=True):
+    import fitz
+
+    lines = []
+    doc = fitz.open(path)
+    for page_num, page in enumerate(doc, 1):
+        text = page.get_text().strip()
+        if text:
+            if len(doc) > 1:
+                lines.append(f"\n--- Page {page_num} ---\n")
+            lines.append(text)
+    block = comments_block(pdf_comments(doc)) if include_comments else ""
+    doc.close()
+    text = "\n".join(lines)
+    return text + ("\n" + block if block else "")
+
+
+def read_docx_text(path, include_comments=True):
+    from docx import Document
+
+    lines = []
+    doc = Document(path)
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            if para.style and para.style.name.startswith("Heading"):
+                level = para.style.name.replace("Heading ", "").strip()
+                try:
+                    prefix = "#" * int(level) + " "
+                except ValueError:
+                    prefix = "# "
+                lines.append(f"{prefix}{text}")
+            else:
+                lines.append(text)
+    if doc.tables:
+        for i, table in enumerate(doc.tables):
+            lines.append(f"\n--- Table {i + 1} ---")
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                lines.append(" | ".join(cells))
+    if include_comments:
+        block = comments_block(docx_comments(doc))
+        if block:
+            lines.append(block)
+    return "\n".join(lines)
+
+
+def read_xlsx_text(path, include_comments=True):
+    from openpyxl import load_workbook
+
+    buf = io.StringIO()
+    wb = load_workbook(path, read_only=True, data_only=True)
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        buf.write(f"=== Sheet: {sheet_name} ===\n\n")
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            buf.write("(empty sheet)\n\n")
+            continue
+        str_rows = [[str(c) if c is not None else "" for c in row] for row in rows]
+        col_widths = []
+        for col_idx in range(len(str_rows[0])):
+            max_width = max(
+                (len(r[col_idx]) for r in str_rows if col_idx < len(r)), default=0
+            )
+            col_widths.append(min(max_width, 40))
+        for row_idx, row in enumerate(str_rows):
+            padded = []
+            for col_idx, cell in enumerate(row):
+                width = col_widths[col_idx] if col_idx < len(col_widths) else 10
+                padded.append(cell.ljust(width))
+            buf.write(" | ".join(padded) + "\n")
+            if row_idx == 0:
+                buf.write("-+-".join("-" * w for w in col_widths) + "\n")
+        buf.write("\n")
+    wb.close()
+    result = buf.getvalue()
+    if include_comments:
+        block = comments_block(xlsx_comments(path))
+        if block:
+            result += block + "\n"
+    return result
+
+
+def read_file_content(path, include_comments=True):
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in READABLE_TEXT:
+            return read_text_file(path)
+        elif ext == ".docx":
+            return read_docx_text(path, include_comments)
+        elif ext == ".xlsx":
+            return read_xlsx_text(path, include_comments)
+        elif ext == ".pdf":
+            return read_pdf_text(path, include_comments)
+    except Exception as e:
+        print(f"  Warning: Failed to read {path}: {e}", file=sys.stderr)
+    return None
+
+
+# --- Search (structure-aware: lines, paragraphs, chars, and spreadsheet cells) ---
+#
+# NOTE: this block is duplicated verbatim in bin/readir so each file stays a
+# self-contained PEP 723 uv script (see plans/off-topic-improvements.md).
+
+_PARA_SPLIT = re.compile(r"\n\s*\n+")
+
+
+def iter_paragraphs(path, ext, content=None, include_comments=True):
+    """Paragraph units for --context-paragraphs search.
+
+    .docx uses the document's own paragraphs (plus each table row as one
+    pseudo-paragraph and, by default, each comment); every other format splits
+    its text on blank lines.
+    """
+    if ext == ".docx":
+        from docx import Document
+
+        doc = Document(path)
+        paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                line = " | ".join(cell.text.strip() for cell in row.cells)
+                if line.strip(" |"):
+                    paras.append(line)
+        if include_comments:
+            paras.extend(docx_comments(doc))
+        return paras
+    if content is None:
+        content = read_file_content(path, include_comments)
+    if not content:
+        return []
+    return [p.strip() for p in _PARA_SPLIT.split(content.strip()) if p.strip()]
+
+
+def _mark(text, q):
+    """Wrap each case-insensitive occurrence of q in »…« (preserving case)."""
+    low = text.lower()
+    out = []
+    i = 0
+    ql = len(q)
+    while i < len(text):
+        j = low.find(q, i)
+        if j == -1:
+            out.append(text[i:])
+            break
+        out.append(text[i:j])
+        out.append("»" + text[j : j + ql] + "«")
+        i = j + ql
+    return "".join(out)
+
+
+def _match_header(label, count, noun="match"):
+    plural = noun + ("es" if count != 1 else "")
+    print(f"\n{'═' * 60}")
+    print(f"  {label} ({count} {plural})")
+    print(f"{'═' * 60}")
+
+
+def search_lines(label, content, q, n):
+    lines = content.splitlines()
+    matching = [i for i, line in enumerate(lines) if q in line.lower()]
+    if not matching:
+        return 0
+    _match_header(label, len(matching))
+    shown = set()
+    for idx in matching:
+        start = max(0, idx - n)
+        end = min(len(lines), idx + n + 1)
+        for i in range(start, end):
+            if i not in shown:
+                marker = ">>>" if i == idx else "   "
+                print(f"  {marker} {i + 1:4d} | {lines[i]}")
+                shown.add(i)
+        if end < len(lines):
+            print("       ...")
+    return len(matching)
+
+
+def search_paragraphs(label, paras, q, n):
+    matching = [i for i, p in enumerate(paras) if q in p.lower()]
+    if not matching:
+        return 0
+    _match_header(label, len(matching))
+    shown = set()
+    for idx in matching:
+        start = max(0, idx - n)
+        end = min(len(paras), idx + n + 1)
+        for i in range(start, end):
+            if i not in shown:
+                marker = ">>>" if i == idx else "   "
+                body = _mark(paras[i], q) if i == idx else paras[i]
+                print(f"  {marker} ¶{i + 1} | {body}")
+                shown.add(i)
+        print()
+    return len(matching)
+
+
+def search_chars(label, content, q, n):
+    low = content.lower()
+    ql = len(q)
+    offsets = []
+    start = 0
+    while True:
+        idx = low.find(q, start)
+        if idx == -1:
+            break
+        offsets.append(idx)
+        start = idx + ql
+    if not offsets:
+        return 0
+    windows = []
+    for off in offsets:
+        s = max(0, off - n)
+        e = min(len(content), off + ql + n)
+        if windows and s <= windows[-1][1]:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], e))
+        else:
+            windows.append((s, e))
+    _match_header(label, len(offsets))
+    for s, e in windows:
+        prefix = "…" if s > 0 else ""
+        suffix = "…" if e < len(content) else ""
+        snippet = _mark(content[s:e], q).replace("\n", " ")
+        print(f"  {prefix}{snippet}{suffix}")
+        print()
+    return len(offsets)
+
+
+def _render_rows(str_rows, wanted, match_rows):
+    if not wanted:
+        return ""
+    ncols = max((len(str_rows[i]) for i in wanted), default=0)
+    col_widths = []
+    for c in range(ncols):
+        w = 0
+        for i in wanted:
+            r = str_rows[i]
+            if c < len(r):
+                w = max(w, len(r[c]))
+        col_widths.append(min(w, 40))
+    out = []
+    for i in sorted(wanted):
+        r = str_rows[i]
+        padded = [
+            (r[c] if c < len(r) else "").ljust(col_widths[c]) for c in range(ncols)
+        ]
+        marker = ">>>" if i in match_rows else "   "
+        out.append(f"  {marker} {i + 1:4d} | " + " | ".join(padded))
+    return "\n".join(out)
+
+
+def search_xlsx(label, path, query, n_rows, include_comments=True):
+    """Spreadsheet-aware search: report Sheet!Coord + column/row headers per
+    matching cell, then a window of the matching rows ± n_rows. Cell comments are
+    searched too (unless include_comments is False)."""
+    from openpyxl import load_workbook
+    from openpyxl.utils import get_column_letter
+
+    q = query.lower()
+    wb = load_workbook(path, read_only=True, data_only=True)
+    sections = []
+    total = 0
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            continue
+        header_row = rows[0]
+        matches = []
+        for r_idx, row in enumerate(rows):
+            for c_idx, val in enumerate(row):
+                if val is not None and q in str(val).lower():
+                    matches.append((r_idx, c_idx, val))
+        if not matches:
+            continue
+        lines = []
+        for r_idx, c_idx, val in matches:
+            coord = f"{get_column_letter(c_idx + 1)}{r_idx + 1}"
+            bits = []
+            if r_idx != 0 and c_idx < len(header_row) and header_row[c_idx] is not None:
+                bits.append(f'col "{header_row[c_idx]}"')
+            first = rows[r_idx][0] if rows[r_idx] else None
+            if c_idx != 0 and first is not None:
+                bits.append(f'row "{first}"')
+            ctx = f"  [{' / '.join(bits)}]" if bits else ""
+            lines.append(f"  >>> {sheet_name}!{coord}{ctx}  {val}")
+        match_rows = {r for r, _, _ in matches}
+        wanted = set()
+        for r in match_rows:
+            for i in range(max(0, r - n_rows), min(len(rows), r + n_rows + 1)):
+                wanted.add(i)
+        str_rows = [[str(c) if c is not None else "" for c in row] for row in rows]
+        sections.append((sheet_name, lines, _render_rows(str_rows, wanted, match_rows)))
+        total += len(matches)
+    wb.close()
+    comment_hits = [
+        line
+        for line in (xlsx_comments(path) if include_comments else [])
+        if q in line.lower()
+    ]
+    total += len(comment_hits)
+    if total == 0:
+        return 0
+    _match_header(label, total, noun="cell match")
+    for sheet_name, lines, window in sections:
+        print(f"\n  --- Sheet: {sheet_name} ---")
+        for line in lines:
+            print(line)
+        print()
+        print(window)
+        print()
+    if comment_hits:
+        print("\n  --- Comments ---")
+        for line in comment_hits:
+            print(f"  >>> {_mark(line, q)}")
+    return total
+
+
+def search_file(label, path, ext, query, mode, n, n_rows, include_comments=True):
+    """Dispatch a search over one file; print results, return match count."""
+    if ext == ".xlsx":
+        return search_xlsx(label, path, query, n_rows, include_comments)
+    content = read_file_content(path, include_comments)
+    if content is None:
+        return 0
+    q = query.lower()
+    if mode == "paragraphs":
+        paras = iter_paragraphs(path, ext, content, include_comments)
+        return search_paragraphs(label, paras, q, n)
+    if mode == "chars":
+        return search_chars(label, content, q, n)
+    return search_lines(label, content, q, n)
+
+
+def resolve_context(args):
+    """Return (mode, n) from the mutually exclusive context flags (default lines/2)."""
+    for mode, value in (
+        ("lines", args.context),
+        ("paragraphs", args.context_paragraphs),
+        ("chars", args.context_chars),
+    ):
+        if value is not None:
+            return mode, value
+    return "lines", 2
+
+
+def cmd_search(argv):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="readoc search",
+        description="Search a single document (structure-aware context).",
+    )
+    parser.add_argument("file", help="Document to search (.docx/.xlsx/.pdf/.md/...)")
+    parser.add_argument("query", help="Text to search for (case-insensitive)")
+    ctx = parser.add_mutually_exclusive_group()
+    ctx.add_argument(
+        "--context",
+        type=int,
+        default=None,
+        help="Lines of context around prose matches (default: 2)",
+    )
+    ctx.add_argument(
+        "--context-paragraphs",
+        type=int,
+        default=None,
+        help="Whole paragraphs of context around prose matches",
+    )
+    ctx.add_argument(
+        "--context-chars",
+        type=int,
+        default=None,
+        help="Characters of context on each side of prose matches",
+    )
+    parser.add_argument(
+        "--context-rows",
+        type=int,
+        default=2,
+        help="Rows of context around spreadsheet matches (default: 2)",
+    )
+    parser.add_argument(
+        "--no-comments",
+        action="store_true",
+        help="Don't search document comments (searched by default)",
+    )
+    args = parser.parse_args(argv)
+
+    if not os.path.exists(args.file):
+        print(f"Error: File not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+    ext = os.path.splitext(args.file)[1].lower()
+    if ext not in READABLE_ALL:
+        print(f"Error: Unsupported file type '{ext}' for {args.file}", file=sys.stderr)
+        print(f"Supported: {' '.join(sorted(READABLE_ALL))}", file=sys.stderr)
+        sys.exit(1)
+
+    mode, n = resolve_context(args)
+    total = search_file(
+        args.file,
+        args.file,
+        ext,
+        args.query,
+        mode,
+        n,
+        args.context_rows,
+        not args.no_comments,
+    )
+    if total == 0:
+        print(f"  No matches found for '{args.query}'")
+    sys.exit(0)
+
+
 def main():
+    # `readoc search <file> <query> [...]` runs the single-file search path; any
+    # other invocation is the normal reader. (A file literally named "search"
+    # can still be read via `readoc ./search`.)
+    if len(sys.argv) >= 2 and sys.argv[1] == "search":
+        cmd_search(sys.argv[2:])
+        return
+
     # Lightweight flag handling: comments are included by default; --no-comments
     # turns them off. --comments is accepted as a harmless explicit opt-in.
     include_comments = True
@@ -207,6 +656,8 @@ def main():
         print(
             "Usage: readoc [--no-comments] <file.docx|file.xlsx|file.pdf> [file2 ...]"
         )
+        print("       readoc search <file> <query> [--context-paragraphs N |")
+        print("                                      --context-chars N | --context N]")
         print(
             "\nReads .docx, .xlsx, and .pdf files and outputs their content as plain text."
         )
@@ -214,6 +665,8 @@ def main():
         print(
             "Document comments are included by default; pass --no-comments to omit them."
         )
+        print("`readoc search` greps one file: paragraph/char context for prose, or")
+        print("cell-coordinate + header context for spreadsheets (.xlsx).")
         sys.exit(1)
 
     exit_code = 0

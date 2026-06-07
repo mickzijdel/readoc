@@ -5,13 +5,25 @@ as plain text — without truncation.
 
 ## Tools
 
-- **`readoc`** — read one or more `.docx` / `.xlsx` / `.pdf` files. Each file gets
-  a header box (`path (Type, size)`); headings, tables, and sheets are preserved.
+- **`readoc`** — read one or more `.docx` / `.xlsx` / `.pdf` files, or
+  `readoc search <file> <query>` to grep inside one. Each file gets a header box
+  (`path (Type, size)`); headings, tables, and sheets are preserved.
 - **`readir`** — explore (`tree`), concatenate (`read`), or grep (`search`) an
   entire folder of mixed documents (`.md .txt .csv .docx .xlsx .pdf .json .yaml .yml`).
 
 Both are exposed as the `reading-documents` skill (`readoc:reading-documents`) and
 are symlinked onto `PATH` for direct CLI use.
+
+## Structure-aware search
+
+`readir search` and `readoc search` go beyond a line-oriented `grep`. For prose
+(`.docx`/`.pdf`/`.md`/…) pick one context unit — `--context` (lines, the
+default), `--context-paragraphs` (whole paragraphs), or `--context-chars` (a
+character window, with the match wrapped in `»…«`). Spreadsheets (`.xlsx`) are
+searched **cell by cell**: each hit shows `Sheet!Cell` plus its column/row headers
+and a window of surrounding rows (`--context-rows`). Comments are searched by
+default (`--no-comments` to skip). Plain piping still works for line-oriented work
+— `readoc file.docx | grep -A3 term`, `find ./docs -name '*.docx'`.
 
 ## Comments
 

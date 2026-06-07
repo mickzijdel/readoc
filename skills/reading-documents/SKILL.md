@@ -21,6 +21,12 @@ readoc file.xlsx                 # read an Excel spreadsheet
 readoc file.pdf                  # read a PDF
 readoc file1.docx file2.xlsx     # read several; each gets a header box
 readoc --no-comments file.docx   # omit comments (included by default)
+
+# Search inside one file (structure-aware context — see "Search modes" below)
+readoc search file.docx "deadline"                       # default: line context
+readoc search file.docx "deadline" --context-paragraphs 1
+readoc search report.pdf "risk"    --context-chars 120
+readoc search budget.xlsx "Q3"                           # cell-coordinate aware
 ```
 
 Each file is preceded by an unambiguous header box (`path (Type, size)`), so
@@ -56,14 +62,37 @@ readir read path/to/folder --no-comments      # omit comments (included by defau
 
 # Search — grep across all docs (incl. docx/xlsx/pdf)
 readir search path/to/folder "query"
-readir search path/to/folder "query" --context 5   # lines of context (default 2)
+readir search path/to/folder "query" --context 5            # lines of context (default 2)
+readir search path/to/folder "query" --context-paragraphs 1 # whole paragraphs of context
+readir search path/to/folder "query" --context-chars 120    # character window of context
+readir search path/to/folder "query" --context-rows 3       # rows of context (spreadsheets)
 readir search path/to/folder "query" --filter docx
-readir search path/to/folder "query" --no-comments # don't search comment text
+readir search path/to/folder "query" --no-comments          # don't search comment text
 ```
 
-Comments are extracted by default for `readir read` (and are searchable by
-`readir search`), in the same `--- Comments ---` form as `readoc`. Use
-`--no-comments` on either to opt out.
+### Search modes
+Both `readir search` and `readoc search` are **structure-aware**, doing what a
+plain `grep` cannot:
+
+- **Prose** (`.docx`, `.pdf`, `.md`, `.txt`, …) — choose one context unit
+  (mutually exclusive, default `--context` lines):
+  - `--context N` — N lines around each match (the original behaviour).
+  - `--context-paragraphs N` — the matching paragraph ± N whole paragraphs
+    (units marked `¶`); respects real paragraph boundaries.
+  - `--context-chars N` — a ±N character window around each match, merging
+    overlapping windows. The matched term is wrapped in `»…«`.
+- **Spreadsheets** (`.xlsx`) — always searched **cell by cell**. Each hit reports
+  `Sheet!Cell` plus its column header (row 1) and row header (column A), e.g.
+  `Budget!C7  [col "Amount" / row "Q3"]  <value>`, followed by a window of the
+  matching rows ± `--context-rows` (default 2). Cell comments are searched too.
+
+You can still pipe to ordinary tools for line-oriented work
+(`readoc file.docx | grep -A3 deadline`, `… | head`, `find ./docs -name '*.docx'`)
+— the built-in modes add the structure-aware context that piping can't.
+
+Comments are extracted by default for `readir read` (and are searchable by both
+search commands), in the same `--- Comments ---` form as `readoc`. Use
+`--no-comments` to opt out.
 
 Supported formats: `.md .txt .csv .docx .xlsx .pdf .json .yaml .yml`.
 

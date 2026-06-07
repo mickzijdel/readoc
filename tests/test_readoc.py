@@ -208,3 +208,50 @@ def test_partial_success_still_prints_good_file(readoc, docx_file, tmp_path):
     assert "File not found" in err
     # ...but the readable file's content is still emitted.
     assert "# Main Title" in out
+
+
+# --- Integration: single-file search subcommand ---
+
+
+def test_search_docx_paragraph_mode(readoc, prose_docx):
+    out, err, code = readoc("search", prose_docx, "budget", "--context-paragraphs", "1")
+    assert code == 0, err
+    assert "¶" in out
+    assert "»budget«" in out
+    assert "neighbour paragraph" in out
+    assert "FARWORD" not in out  # outside the ±1 window
+
+
+def test_search_docx_char_mode(readoc, prose_docx):
+    out, err, code = readoc("search", prose_docx, "budget", "--context-chars", "15")
+    assert code == 0, err
+    assert "»budget«" in out
+    assert "…" in out
+
+
+def test_search_xlsx_cell_aware(readoc, search_xlsx):
+    out, err, code = readoc("search", search_xlsx, "overrun")
+    assert code == 0, err
+    assert "Budget!C3" in out
+    assert 'col "Notes"' in out
+    assert 'row "Q2"' in out
+
+
+def test_search_no_matches(readoc, prose_docx):
+    out, _, code = readoc("search", prose_docx, "zzz-not-here-zzz")
+    assert code == 0
+    assert "No matches found" in out
+
+
+def test_search_unsupported_extension(readoc, tmp_path):
+    f = tmp_path / "thing.png"
+    f.write_bytes(b"\x89PNG")
+    out, err, code = readoc("search", f, "x")
+    assert code == 1
+    assert "Unsupported file type" in err
+
+
+def test_search_missing_file(readoc, tmp_path):
+    out, err, code = readoc("search", tmp_path / "nope.docx", "x")
+    assert code == 1
+    assert "File not found" in err

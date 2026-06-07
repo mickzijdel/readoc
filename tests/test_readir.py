@@ -298,3 +298,91 @@ def test_no_command_shows_help(readir):
     out, _, code = readir()
     assert code == 0
     assert "Usage:" in out
+
+
+# --- Integration: search context modes (paragraphs / chars) ---
+
+
+def test_search_lines_is_default_mode(readir, search_tree):
+    """With no context flag, prose search uses the numbered-line gutter."""
+    out, err, code = readir("search", search_tree, "budget", "--filter", "docx")
+    assert code == 0, err
+    assert "report.docx (" in out
+    assert ">>>" in out
+    assert "budget" in out.lower()
+
+
+def test_search_paragraphs_includes_neighbour_excludes_far(readir, search_tree):
+    """--context-paragraphs 1 shows the hit ± one paragraph, marking units with ¶."""
+    out, err, code = readir(
+        "search",
+        search_tree,
+        "budget",
+        "--context-paragraphs",
+        "1",
+        "--filter",
+        "docx",
+    )
+    assert code == 0, err
+    assert "¶" in out
+    assert "»budget«" in out  # matched term highlighted
+    assert "neighbour paragraph" in out  # immediate neighbour included
+    assert "FARWORD" not in out  # two paragraphs away → excluded
+
+
+def test_search_chars_window_and_marker(readir, search_tree):
+    """--context-chars N shows a character window with the match wrapped in »…«."""
+    out, err, code = readir(
+        "search", search_tree, "budget", "--context-chars", "20", "--filter", "txt"
+    )
+    assert code == 0, err
+    assert "blob.txt (" in out
+    assert "»budget«" in out
+    assert "…" in out  # truncated window delimiter
+
+
+def test_search_context_modes_mutually_exclusive(readir, search_tree):
+    out, err, code = readir(
+        "search", search_tree, "budget", "--context", "2", "--context-chars", "50"
+    )
+    assert code == 2
+    assert "not allowed with" in err
+
+
+# --- Integration: search spreadsheets (cell-aware) ---
+
+
+def test_search_xlsx_reports_coordinate_and_headers(readir, search_tree):
+    out, err, code = readir("search", search_tree, "overrun", "--filter", "xlsx")
+    assert code == 0, err
+    assert "cell match" in out
+    assert "Budget!C3" in out
+    assert 'col "Notes"' in out
+    assert 'row "Q2"' in out
+
+
+def test_search_xlsx_shows_surrounding_rows(readir, search_tree):
+    out, _, code = readir(
+        "search", search_tree, "overrun", "--filter", "xlsx", "--context-rows", "1"
+    )
+    assert code == 0
+    assert ">>>    3 |" in out  # matched row marked
+    assert "Q1" in out  # adjacent row (2) shown within the ±1 window
+
+
+def test_search_xlsx_searches_cell_comments(readir, search_tree):
+    out, _, code = readir("search", search_tree, "double-check", "--filter", "xlsx")
+    assert code == 0
+    assert "--- Comments ---" in out
+    # The matched term is highlighted, so the comment shows as »double-check« …
+    assert "»double-check«" in out
+    assert "Reviewer:" in out
+    assert "this amount" in out
+
+
+def test_search_xlsx_no_comments_flag_skips_comments(readir, search_tree):
+    out, _, code = readir(
+        "search", search_tree, "double-check", "--filter", "xlsx", "--no-comments"
+    )
+    assert code == 0
+    assert "No matches found" in out
