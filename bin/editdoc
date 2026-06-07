@@ -444,7 +444,10 @@ def save_atomic(save_fn, path):
 def apply_docx_edits(path, edits):
     from docx import Document
 
-    doc = Document(path)
+    try:
+        doc = Document(path)
+    except Exception as e:
+        raise EditError(f"could not open {path} as a .docx file ({e}).")
     outputs = []
     for i, edit in enumerate(edits):
         outputs.extend(apply_one_docx_edit(doc, edit, i))
@@ -540,7 +543,10 @@ def apply_xlsx_edits(path, edits, force=False):
                 "when it rewrites the file — editing it here would lose them. "
                 "Re-run with --force to edit anyway (accepting that loss)."
             )
-    wb = load_workbook(path)
+    try:
+        wb = load_workbook(path)
+    except Exception as e:
+        raise EditError(f"could not open {path} as an .xlsx file ({e}).")
     outputs = []
     for i, edit in enumerate(edits):
         if not isinstance(edit, dict) or "sheet" not in edit:

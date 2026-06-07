@@ -682,6 +682,26 @@ def test_unknown_flag_rejected(tmp_path):
     assert "flag" in err.lower() or "unknown" in err.lower()
 
 
+def test_corrupt_docx_clean_error(editdoc, tmp_path):
+    # A file with a .docx extension but invalid content must produce a clean
+    # Error:, not a raw Python traceback.
+    f = tmp_path / "broken.docx"
+    f.write_bytes(b"this is not a real docx package")
+    out, err, code = editdoc(f, {"old_string": "a", "new_string": "b"})
+    assert code == 1
+    assert "Traceback" not in err
+    assert "valid" in err.lower() or "could not" in err.lower()
+
+
+def test_corrupt_xlsx_clean_error(editdoc, tmp_path):
+    f = tmp_path / "broken.xlsx"
+    f.write_bytes(b"not a real xlsx zip")
+    out, err, code = editdoc(f, {"sheet": "S", "cell": "A1", "value": "x"})
+    assert code == 1
+    assert "Traceback" not in err
+    assert "valid" in err.lower() or "could not" in err.lower()
+
+
 def test_multiple_files_rejected(tmp_path):
     # editdoc edits a single file; passing more than one must error, not silently
     # edit only the first.
