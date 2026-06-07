@@ -237,9 +237,143 @@ def apply_text_replace(doc, edit, index):
     return outputs
 
 
+# --- docx: paragraph / range replace ---
+
+
+def iter_doc_containers(doc):
+    """Yield (container_id, ordered_paragraph_list) for each paragraph container:
+    the body, then each top-level table cell. A paragraph range may not cross
+    from one container into another."""
+    containers = [("body", list(doc.paragraphs))]
+    for ti, table in enumerate(doc.tables, 1):
+        for ri, row in enumerate(table.rows, 1):
+            for ci, cell in enumerate(row.cells, 1):
+                containers.append(
+                    (f"table {ti}, row {ri}, col {ci}", list(cell.paragraphs))
+                )
+    return containers
+
+
+def locate_anchor(doc, substring, role, index):
+    """Find the single paragraph whose visible text contains ``substring``.
+
+    Returns (container_id, position_in_container). Raises EditError when the
+    anchor is missing or matches more than one paragraph."""
+    matches = []
+    for cid, paras in iter_doc_containers(doc):
+        for pos, para in enumerate(paras):
+            if substring in paragraph_text(para):
+                matches.append((cid, pos))
+    if not matches:
+        raise EditError(f'edit {index + 1}: {role} not found: "{substring}"')
+    if len(matches) > 1:
+        raise EditError(
+            f'edit {index + 1}: {role} "{substring}" matches {len(matches)} '
+            "paragraphs — add more context to make it unique."
+        )
+    return matches[0]
+
+
+def set_paragraph_text(paragraph, text):
+    """Replace all of a paragraph's runs with a single run holding ``text``,
+    inheriting the formatting of the paragraph's original first run."""
+    runs = list(paragraph.runs)
+    fmt_src = runs[0] if runs else None
+    for r in runs:
+        r._element.getparent().remove(r._element)
+    new_run = paragraph.add_run(text)
+    if fmt_src is not None:
+        _copy_run_format(new_run, fmt_src)
+
+
+def insert_paragraph_after(paragraph, text):
+    """Insert a new paragraph after ``paragraph``, cloning its paragraph
+    properties (style/numbering) so the produced paragraph matches, and return it."""
+    from docx.oxml.ns import qn
+    from docx.text.paragraph import Paragraph
+
+    new_p = copy.deepcopy(paragraph._p)
+    # Strip the cloned content, keeping only the paragraph properties (w:pPr).
+    for child in list(new_p):
+        if child.tag != qn("w:pPr"):
+            new_p.remove(child)
+    paragraph._p.addnext(new_p)
+    new_para = Paragraph(new_p, paragraph._parent)
+    src_run = paragraph.runs[0] if paragraph.runs else None
+    run = new_para.add_run(text)
+    if src_run is not None:
+        _copy_run_format(run, src_run)
+    return new_para
+
+
+def remove_paragraph(paragraph):
+    paragraph._p.getparent().remove(paragraph._p)
+
+
+def apply_paragraph_op(doc, edit, index):
+    start = edit.get("start_contains")
+    new_text = edit.get("new_text")
+    if start is None or new_text is None:
+        raise EditError(
+            f"edit {index + 1}: a paragraph op needs start_contains and new_text."
+        )
+    end = edit.get("end_contains")
+
+    start_cid, start_pos = locate_anchor(doc, start, "start_contains", index)
+    if end is not None:
+        end_cid, end_pos = locate_anchor(doc, end, "end_contains", index)
+        if end_cid != start_cid:
+            raise EditError(
+                f"edit {index + 1}: start_contains and end_contains are in "
+                f"different containers ({start_cid} vs {end_cid}); a range must "
+                "stay within one container."
+            )
+        if end_pos < start_pos:
+            raise EditError(
+                f"edit {index + 1}: end_contains paragraph comes before "
+                "start_contains — check the order of your anchors."
+            )
+    else:
+        end_pos = start_pos
+
+    # Re-fetch the container's paragraph list now that anchors are validated.
+    paras = dict(iter_doc_containers(doc))[start_cid]
+    block = paras[start_pos : end_pos + 1]
+    lines = new_text.split("\n") if new_text != "" else []
+
+    if not lines:
+        for para in block:
+            remove_paragraph(para)
+        outputs = [
+            f"✓ edit {index + 1}: deleted {len(block)} paragraph"
+            f"{'' if len(block) == 1 else 's'} ({start_cid})"
+        ]
+        return outputs
+
+    first = block[0]
+    set_paragraph_text(first, lines[0])
+    anchor = first
+    for line in lines[1:]:
+        anchor = insert_paragraph_after(anchor, line)
+    for para in block[1:]:
+        remove_paragraph(para)
+
+    outputs = [
+        f"✓ edit {index + 1}: replaced {len(block)} paragraph"
+        f"{'' if len(block) == 1 else 's'} → {len(lines)} ({start_cid})"
+    ]
+    # Preview: the first paragraph rendered with its (inherited) formatting, then
+    # the additional split lines as plain text.
+    outputs.append("  └ " + render_paragraph_markdown(first))
+    outputs.extend("  └ " + line for line in lines[1:])
+    return outputs
+
+
 def apply_one_docx_edit(doc, edit, index):
     if "old_string" in edit:
         return apply_text_replace(doc, edit, index)
+    if "start_contains" in edit:
+        return apply_paragraph_op(doc, edit, index)
     raise EditError(
         f"edit {index + 1}: unrecognized docx edit — expected old_string "
         "(text replace) or start_contains (paragraph op)."

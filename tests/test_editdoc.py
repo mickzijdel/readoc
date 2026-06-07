@@ -208,3 +208,124 @@ def test_docx_replace_inside_table_cell(editdoc, tmp_path):
     assert code == 0, err
     cell_text = Document(str(f)).tables[0].rows[0].cells[1].text
     assert cell_text == "new value"
+
+
+# --- Task 3: docx paragraph / range replace ---
+
+
+def test_docx_single_paragraph_replace(editdoc, tmp_path):
+    f = make_paras_docx(
+        tmp_path / "x.docx", ["Keep me", "Quarterly results were strong", "Keep me too"]
+    )
+    out, err, code = editdoc(
+        f, {"start_contains": "Quarterly results", "new_text": "Replaced line"}
+    )
+    assert code == 0, err
+    assert body_texts(f) == ["Keep me", "Replaced line", "Keep me too"]
+
+
+def test_docx_paragraph_split_into_many(editdoc, tmp_path):
+    # new_text with newlines turns one paragraph into several.
+    f = make_paras_docx(tmp_path / "x.docx", ["before", "TARGET para", "after"])
+    out, err, code = editdoc(
+        f, {"start_contains": "TARGET", "new_text": "one\ntwo\nthree"}
+    )
+    assert code == 0, err
+    assert body_texts(f) == ["before", "one", "two", "three", "after"]
+
+
+def test_docx_range_replace_five_to_three(editdoc, tmp_path):
+    f = make_paras_docx(
+        tmp_path / "x.docx",
+        ["head", "P1 start", "P2", "P3", "P4", "P5 end", "tail"],
+    )
+    out, err, code = editdoc(
+        f,
+        {
+            "start_contains": "P1 start",
+            "end_contains": "P5 end",
+            "new_text": "new A\nnew B\nnew C",
+        },
+    )
+    assert code == 0, err
+    assert body_texts(f) == ["head", "new A", "new B", "new C", "tail"]
+
+
+def test_docx_range_delete_with_empty_new_text(editdoc, tmp_path):
+    f = make_paras_docx(
+        tmp_path / "x.docx", ["keep", "drop 1", "drop 2", "drop 3", "keep too"]
+    )
+    out, err, code = editdoc(
+        f,
+        {"start_contains": "drop 1", "end_contains": "drop 3", "new_text": ""},
+    )
+    assert code == 0, err
+    assert body_texts(f) == ["keep", "keep too"]
+
+
+def test_docx_single_paragraph_delete(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["keep", "remove me", "keep too"])
+    out, err, code = editdoc(f, {"start_contains": "remove me", "new_text": ""})
+    assert code == 0, err
+    assert body_texts(f) == ["keep", "keep too"]
+
+
+def test_docx_paragraph_split_inherits_style(editdoc, tmp_path):
+    # Splitting a styled paragraph: every produced paragraph keeps the style.
+    doc = Document()
+    doc.add_paragraph("plain")
+    doc.add_paragraph("Heading target", style="Heading 1")
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    out, err, code = editdoc(
+        f, {"start_contains": "Heading target", "new_text": "H one\nH two"}
+    )
+    assert code == 0, err
+    styled = [
+        p.text for p in Document(str(f)).paragraphs if p.style.name == "Heading 1"
+    ]
+    assert styled == ["H one", "H two"]
+
+
+def test_docx_paragraph_anchor_not_unique_errors(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["dup line", "dup line"])
+    out, err, code = editdoc(f, {"start_contains": "dup line", "new_text": "x"})
+    assert code == 1
+    assert "2" in err
+    assert body_texts(f) == ["dup line", "dup line"]
+
+
+def test_docx_paragraph_anchor_not_found_errors(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["a", "b"])
+    out, err, code = editdoc(f, {"start_contains": "nope", "new_text": "x"})
+    assert code == 1
+    assert "not found" in err.lower()
+
+
+def test_docx_range_end_before_start_errors(editdoc, tmp_path):
+    f = make_paras_docx(tmp_path / "x.docx", ["first", "second"])
+    out, err, code = editdoc(
+        f,
+        {"start_contains": "second", "end_contains": "first", "new_text": "x"},
+    )
+    assert code == 1
+    assert "before" in err.lower() or "order" in err.lower()
+
+
+def test_docx_range_cross_container_errors(editdoc, tmp_path):
+    doc = Document()
+    doc.add_paragraph("start here in body")
+    t = doc.add_table(rows=1, cols=1)
+    t.rows[0].cells[0].text = "end here in cell"
+    f = tmp_path / "x.docx"
+    doc.save(str(f))
+    out, err, code = editdoc(
+        f,
+        {
+            "start_contains": "start here",
+            "end_contains": "end here",
+            "new_text": "x",
+        },
+    )
+    assert code == 1
+    assert "container" in err.lower() or "same" in err.lower()
