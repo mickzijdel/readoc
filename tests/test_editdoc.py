@@ -8,6 +8,7 @@ the fly with python-docx / openpyxl; results are verified by re-opening the file
 import hashlib
 
 from docx import Document
+from openpyxl import Workbook, load_workbook
 
 
 # --- Fixture builders specific to editing tests ---
@@ -38,6 +39,22 @@ def make_paras_docx(path, paras):
         doc.add_paragraph(text)
     doc.save(str(path))
     return path
+
+
+def make_xlsx(path, rows=(("Quarter", "Amount"), ("Q1", 1000)), sheet="Budget"):
+    """Write a small .xlsx with the given rows on a named sheet."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet
+    for row in rows:
+        ws.append(list(row))
+    wb.save(str(path))
+    return path
+
+
+def cell_value(path, sheet, coord):
+    wb = load_workbook(str(path))
+    return wb[sheet][coord].value
 
 
 def body_texts(path):
@@ -329,3 +346,56 @@ def test_docx_range_cross_container_errors(editdoc, tmp_path):
     )
     assert code == 1
     assert "container" in err.lower() or "same" in err.lower()
+
+
+# --- Task 4: xlsx cell edit ---
+
+
+def test_xlsx_set_existing_cell(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx", rows=(("Quarter", "Amount"), ("Q1", 1000)))
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": "1250"})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "B2") == 1250  # numeric coercion
+    assert "Budget!B2" in out
+
+
+def test_xlsx_set_empty_cell(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx", rows=(("Quarter", "Amount"), ("Q1", 1000)))
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "C5", "value": "hello"})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "C5") == "hello"
+
+
+def test_xlsx_numeric_vs_string_coercion(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "3.5"})
+    editdoc(f, {"sheet": "Budget", "cell": "A6", "value": "N/A"})
+    assert cell_value(f, "Budget", "A5") == 3.5
+    assert cell_value(f, "Budget", "A6") == "N/A"
+
+
+def test_xlsx_numeric_passed_as_json_number(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A7", "value": 42})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "A7") == 42
+
+
+def test_xlsx_bad_sheet_errors(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Nonexistent", "cell": "A1", "value": "x"})
+    assert code == 1
+    assert "sheet" in err.lower()
+
+
+def test_xlsx_bad_coordinate_errors(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "1", "value": "x"})
+    assert code == 1
+    assert "cell" in err.lower() or "coordinate" in err.lower()
+
+
+def test_xlsx_missing_value_errors(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A1"})
+    assert code == 1

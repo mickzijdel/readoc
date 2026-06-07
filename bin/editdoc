@@ -409,8 +409,65 @@ def apply_docx_edits(path, edits):
         print("\n".join(outputs))
 
 
+# --- xlsx: cell edit ---
+
+
+def coerce_value(value):
+    """Coerce a JSON value for cell assignment: numeric-looking strings become
+    int/float so spreadsheets get real numbers; everything else is left as-is."""
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            pass
+        try:
+            return float(value)
+        except ValueError:
+            pass
+    return value
+
+
+def apply_one_xlsx_edit(wb, edit, index):
+    from openpyxl.utils.cell import coordinate_from_string
+
+    sheet = edit.get("sheet")
+    cell = edit.get("cell")
+    if sheet is None or cell is None or "value" not in edit:
+        raise EditError(
+            f"edit {index + 1}: an xlsx edit needs sheet, cell, and value."
+        )
+    if sheet not in wb.sheetnames:
+        available = ", ".join(wb.sheetnames)
+        raise EditError(
+            f"edit {index + 1}: sheet not found: {sheet!r} (available: {available})."
+        )
+    try:
+        coordinate_from_string(cell)
+    except Exception:
+        raise EditError(
+            f"edit {index + 1}: invalid cell coordinate: {cell!r} "
+            "(expected a reference like B2)."
+        )
+    value = coerce_value(edit["value"])
+    wb[sheet][cell] = value
+    return [f"✓ edit {index + 1}: set {sheet}!{cell} = {value}"]
+
+
 def apply_xlsx_edits(path, edits):
-    raise NotImplementedError
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    outputs = []
+    for i, edit in enumerate(edits):
+        if not isinstance(edit, dict) or "sheet" not in edit:
+            raise EditError(
+                f"edit {i + 1}: unrecognized xlsx edit — expected sheet/cell/value."
+            )
+        outputs.extend(apply_one_xlsx_edit(wb, edit, i))
+    # Reached only if every edit validated; save once, atomically.
+    save_atomic(wb.save, path)
+    if outputs:
+        print("\n".join(outputs))
 
 
 def main(argv=None):
