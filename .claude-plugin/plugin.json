@@ -1,6 +1,6 @@
 {
   "name": "readoc",
-  "description": "Read and edit Office documents (.docx, .xlsx, .pdf) and whole folders of mixed documents as plain text, including embedded comments/annotations by default. Ships the readoc (single/multi file), readir (tree/read/search a folder), and editdoc (Edit-tool-equivalent for .docx/.xlsx) CLIs plus a reading-documents skill. Structure-aware search adds paragraph, character, and spreadsheet-cell context beyond a line-oriented grep. Output is never truncated.",
+  "description": "Read and edit Office documents (.docx, .xlsx, .pdf) and whole folders of mixed documents as plain text, including embedded comments/annotations by default. Ships the readoc (single/multi file), readir (tree/read/search a folder), and editdoc (Edit-tool-equivalent for .docx/.xlsx) CLIs plus an office-documents skill. Structure-aware search adds paragraph, character, and spreadsheet-cell context beyond a line-oriented grep. Output is never truncated.",
   "version": "1.3.0",
   "author": {
     "name": "Mick Zijdel"

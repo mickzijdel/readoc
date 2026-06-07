@@ -1,5 +1,5 @@
 ---
-name: reading-documents
+name: office-documents
 description: Use when you need to read OR edit the contents of Office documents (.docx, .xlsx, .pdf) or explore/search a folder of mixed documents. Provides the readoc, readir, and editdoc CLIs. Reach for this whenever a task involves reading or modifying a Word doc, Excel sheet, PDF, or a directory of such files.
 ---
 

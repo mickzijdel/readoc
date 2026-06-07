@@ -13,7 +13,7 @@ mixed documents as plain text — without truncation.
 - **`editdoc`** — apply exact-match and structural edits to `.docx` / `.xlsx`
   files: what the built-in Edit tool is to text files, for binary Office docs.
 
-All three are exposed as the `reading-documents` skill (`readoc:reading-documents`)
+All three are exposed as the `office-documents` skill (`readoc:office-documents`)
 and are symlinked onto `PATH` for direct CLI use.
 
 ## Structure-aware search
