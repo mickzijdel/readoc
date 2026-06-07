@@ -27,6 +27,22 @@ inline via [PEP 723](https://peps.python.org/pep-0723/) and run through
 `uv run --script`, so uv installs them into a cached environment automatically on
 first use. No manual `pip install` and no venv to manage.
 
+## Development / Testing
+
+A `pytest` suite covers both CLIs (`tests/`). Install the dev dependencies and run it:
+
+```bash
+uv venv .venv                                      # or: python -m venv .venv
+uv pip install --python .venv -r tests/requirements-dev.txt
+.venv/bin/python -m pytest tests/ -q               # or just: pytest -q
+```
+
+The tests generate their own sample `.docx`/`.xlsx`/`.pdf`/text fixtures in a temp
+directory (nothing binary is committed) and drive `bin/readoc` and `bin/readir`
+end-to-end as subprocesses, alongside unit tests of the pure helpers. The dev
+requirements mirror the CLIs' runtime libs (`python-docx`, `openpyxl`, `pymupdf`)
+plus `pytest`.
+
 ## Layout
 
 Source lives in `~/Stack/Programmeren/readoc` and is symlinked into
