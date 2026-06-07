@@ -1,4 +1,4 @@
-amends "package://github.com/jdx/hk/releases/download/v1.45.0/hk@1.45.0#/Config.pkl"
+amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
 
 // The readoc/readir CLIs live in bin/ without a .py extension, so each glob
 // names them explicitly alongside the normal Python sources.
