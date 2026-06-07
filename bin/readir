@@ -17,8 +17,10 @@ import io
 
 # --- File readers (self-contained, mirroring readoc) ---
 
+
 def read_pdf_text(path):
     import fitz
+
     lines = []
     doc = fitz.open(path)
     for page_num, page in enumerate(doc, 1):
@@ -33,6 +35,7 @@ def read_pdf_text(path):
 
 def read_docx_text(path):
     from docx import Document
+
     lines = []
     doc = Document(path)
     for para in doc.paragraphs:
@@ -58,6 +61,7 @@ def read_docx_text(path):
 
 def read_xlsx_text(path):
     from openpyxl import load_workbook
+
     buf = io.StringIO()
     wb = load_workbook(path, read_only=True, data_only=True)
     for sheet_name in wb.sheetnames:
@@ -128,6 +132,7 @@ def read_file_content(path):
 
 # --- Helpers ---
 
+
 def human_size(size_bytes):
     for unit in ("B", "KB", "MB", "GB"):
         if abs(size_bytes) < 1024:
@@ -173,6 +178,7 @@ def parse_extensions(ext_str):
 
 
 # --- Commands ---
+
 
 def cmd_tree(args):
     root = os.path.abspath(args.path)
@@ -290,7 +296,9 @@ def cmd_search(args):
             continue
 
         print(f"\n{'═' * 60}")
-        print(f"  {rel} ({len(matching_indices)} match{'es' if len(matching_indices) != 1 else ''})")
+        print(
+            f"  {rel} ({len(matching_indices)} match{'es' if len(matching_indices) != 1 else ''})"
+        )
         print(f"{'═' * 60}")
 
         shown = set()
@@ -303,7 +311,7 @@ def cmd_search(args):
                     print(f"  {marker} {i + 1:4d} | {lines[i]}")
                     shown.add(i)
             if end < len(lines):
-                print(f"       ...")
+                print("       ...")
 
         match_count += len(matching_indices)
 
@@ -356,25 +364,63 @@ def main():
     # tree
     p_tree = subparsers.add_parser("tree", help="Show file tree with sizes")
     p_tree.add_argument("path", help="Directory to explore")
-    p_tree.add_argument("--max-depth", type=int, default=None, help="Limit recursion depth")
-    p_tree.add_argument("--filter", type=str, default=None, help="Only show these extensions (comma-separated, e.g. md,docx)")
-    p_tree.add_argument("--summary", action="store_true", help="Show extension/size summary")
+    p_tree.add_argument(
+        "--max-depth", type=int, default=None, help="Limit recursion depth"
+    )
+    p_tree.add_argument(
+        "--filter",
+        type=str,
+        default=None,
+        help="Only show these extensions (comma-separated, e.g. md,docx)",
+    )
+    p_tree.add_argument(
+        "--summary", action="store_true", help="Show extension/size summary"
+    )
 
     # read
     p_read = subparsers.add_parser("read", help="Concat all readable files")
     p_read.add_argument("path", help="Directory to read")
-    p_read.add_argument("--max-depth", type=int, default=None, help="Limit recursion depth")
-    p_read.add_argument("--filter", type=str, default=None, help="Only read these extensions (comma-separated)")
-    p_read.add_argument("--exclude", type=str, default=None, help="Skip these extensions (comma-separated)")
-    p_read.add_argument("--max-size", type=int, default=500, help="Skip files larger than N KB (default: 500)")
-    p_read.add_argument("--no-skip-report", action="store_true", help="Suppress skipped files list")
+    p_read.add_argument(
+        "--max-depth", type=int, default=None, help="Limit recursion depth"
+    )
+    p_read.add_argument(
+        "--filter",
+        type=str,
+        default=None,
+        help="Only read these extensions (comma-separated)",
+    )
+    p_read.add_argument(
+        "--exclude",
+        type=str,
+        default=None,
+        help="Skip these extensions (comma-separated)",
+    )
+    p_read.add_argument(
+        "--max-size",
+        type=int,
+        default=500,
+        help="Skip files larger than N KB (default: 500)",
+    )
+    p_read.add_argument(
+        "--no-skip-report", action="store_true", help="Suppress skipped files list"
+    )
 
     # search
     p_search = subparsers.add_parser("search", help="Search across all documents")
     p_search.add_argument("path", help="Directory to search")
     p_search.add_argument("query", help="Text to search for (case-insensitive)")
-    p_search.add_argument("--context", type=int, default=2, help="Lines of context around matches (default: 2)")
-    p_search.add_argument("--filter", type=str, default=None, help="Only search these extensions (comma-separated)")
+    p_search.add_argument(
+        "--context",
+        type=int,
+        default=2,
+        help="Lines of context around matches (default: 2)",
+    )
+    p_search.add_argument(
+        "--filter",
+        type=str,
+        default=None,
+        help="Only search these extensions (comma-separated)",
+    )
 
     args = parser.parse_args()
 

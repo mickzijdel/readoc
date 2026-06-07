@@ -126,7 +126,9 @@ READERS = {".docx": read_docx, ".xlsx": read_xlsx, ".pdf": read_pdf}
 def main():
     if len(sys.argv) < 2:
         print("Usage: readoc <file.docx|file.xlsx|file.pdf> [file2 ...]")
-        print("\nReads .docx, .xlsx, and .pdf files and outputs their content as plain text.")
+        print(
+            "\nReads .docx, .xlsx, and .pdf files and outputs their content as plain text."
+        )
         print("Each file is preceded by a header box (path, type, size).")
         sys.exit(1)
 
@@ -139,7 +141,9 @@ def main():
 
         ext = os.path.splitext(filepath)[1].lower()
         if ext not in READERS:
-            print(f"Error: Unsupported file type '{ext}' for {filepath}", file=sys.stderr)
+            print(
+                f"Error: Unsupported file type '{ext}' for {filepath}", file=sys.stderr
+            )
             print("Supported: .docx, .xlsx, .pdf", file=sys.stderr)
             exit_code = 1
             continue

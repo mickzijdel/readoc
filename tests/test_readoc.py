@@ -2,20 +2,22 @@
 
 import pytest
 
-from conftest import make_docx
-
 
 # --- Unit: pure helpers ---
 
-@pytest.mark.parametrize("size, expected", [
-    (0, "0 B"),
-    (1023, "1023 B"),
-    (1024, "1.0 KB"),
-    (1536, "1.5 KB"),
-    (1024 * 1024, "1.0 MB"),
-    (int(1.5 * 1024 * 1024), "1.5 MB"),
-    (1024 ** 3, "1.0 GB"),
-])
+
+@pytest.mark.parametrize(
+    "size, expected",
+    [
+        (0, "0 B"),
+        (1023, "1023 B"),
+        (1024, "1.0 KB"),
+        (1536, "1.5 KB"),
+        (1024 * 1024, "1.0 MB"),
+        (int(1.5 * 1024 * 1024), "1.5 MB"),
+        (1024**3, "1.0 GB"),
+    ],
+)
 def test_human_size(readoc_mod, size, expected):
     assert readoc_mod.human_size(size) == expected
 
@@ -39,6 +41,7 @@ def test_print_header_unknown_ext_uppercased(readoc_mod, capsys):
 
 # --- Integration: docx ---
 
+
 def test_docx_headerbox_and_headings(readoc, docx_file):
     out, err, code = readoc(docx_file)
     assert code == 0, err
@@ -57,6 +60,7 @@ def test_docx_table_rendered(readoc, docx_file):
 
 
 # --- Integration: xlsx ---
+
 
 def test_xlsx_sheets_and_no_truncation(readoc, xlsx_file):
     from conftest import LONG_CELL
@@ -78,6 +82,7 @@ def test_xlsx_empty_sheet_marker(readoc, xlsx_file):
 
 # --- Integration: pdf ---
 
+
 def test_pdf_single_page(readoc, pdf_file):
     out, err, code = readoc(pdf_file)
     assert code == 0, err
@@ -98,6 +103,7 @@ def test_pdf_multipage_separators(readoc, multipage_pdf):
 
 # --- Integration: multiple files ---
 
+
 def test_multiple_files_each_get_header(readoc, docx_file, pdf_file):
     out, _, code = readoc(docx_file, pdf_file)
     assert code == 0
@@ -106,6 +112,7 @@ def test_multiple_files_each_get_header(readoc, docx_file, pdf_file):
 
 
 # --- Integration: error paths ---
+
 
 def test_missing_file(readoc, tmp_path):
     out, err, code = readoc(tmp_path / "nope.docx")

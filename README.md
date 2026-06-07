@@ -29,19 +29,22 @@ first use. No manual `pip install` and no venv to manage.
 
 ## Development / Testing
 
-A `pytest` suite covers both CLIs (`tests/`). Install the dev dependencies and run it:
+readoc carries a small `pyproject.toml` for **dev tooling only** — the CLIs
+themselves stay self-contained PEP 723 scripts with no runtime dependencies. It
+declares a dev dependency-group (`pytest`, `ruff`, and the doc libs) and is never
+built or installed (`package = false`). Contributors get a reproducible
+test/lint environment via uv:
 
 ```bash
-uv venv .venv                                      # or: python -m venv .venv
-uv pip install --python .venv -r tests/requirements-dev.txt
-.venv/bin/python -m pytest tests/ -q               # or just: pytest -q
+uv sync                  # install the dev group into .venv
+uv run pytest            # run the test suite
+uv run ruff check .      # lint
+uv run ruff format .     # format
 ```
 
 The tests generate their own sample `.docx`/`.xlsx`/`.pdf`/text fixtures in a temp
 directory (nothing binary is committed) and drive `bin/readoc` and `bin/readir`
-end-to-end as subprocesses, alongside unit tests of the pure helpers. The dev
-requirements mirror the CLIs' runtime libs (`python-docx`, `openpyxl`, `pymupdf`)
-plus `pytest`.
+end-to-end as subprocesses, alongside unit tests of the pure helpers.
 
 ## Layout
 

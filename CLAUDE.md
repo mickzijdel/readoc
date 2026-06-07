@@ -9,12 +9,14 @@ Make sure to check all of the following and make sure they are up-to-date after 
 ## Tests
 
 The `bin/readoc` and `bin/readir` CLIs are covered by a pytest suite in `tests/`.
-Before changing either script, establish a green baseline:
+Dev tooling is managed by `pyproject.toml` (a dev-only virtual uv project,
+`package = false`). Before changing either script, establish a green baseline:
 
 ```bash
-uv pip install --python .venv -r tests/requirements-dev.txt   # first time
-.venv/bin/python -m pytest tests/ -q
+uv sync          # first time / after dependency changes
+uv run pytest
 ```
 
-Tests generate their own fixtures in a temp dir and run the CLIs as subprocesses;
-see `README.md` (Development / Testing) for details.
+Lint and format with `uv run ruff check .` and `uv run ruff format .`. Tests
+generate their own fixtures in a temp dir and run the CLIs as subprocesses; see
+`README.md` (Development / Testing) for details.

@@ -7,6 +7,7 @@ import pytest
 
 # --- Unit: parse_extensions ---
 
+
 @pytest.mark.parametrize("value", [None, ""])
 def test_parse_extensions_empty_is_none(readir_mod, value):
     assert readir_mod.parse_extensions(value) is None
@@ -22,6 +23,7 @@ def test_parse_extensions_strips_whitespace_and_dots(readir_mod):
 
 # --- Unit: walk_files ---
 
+
 def test_walk_files_sorted_within_directory(readir_mod, sample_tree):
     rels = [rel for rel, _full, _size in readir_mod.walk_files(str(sample_tree))]
     # walk_files yields directory-by-directory, sorting filenames within each;
@@ -36,8 +38,11 @@ def test_walk_files_reports_sizes(readir_mod, sample_tree):
     sizes = {rel: size for rel, _full, size in readir_mod.walk_files(str(sample_tree))}
     assert sizes["data.csv"] > 0
     # big.txt is the deliberately large file (~3.6 KB).
-    big = next(s for rel, _f, s in readir_mod.walk_files(str(sample_tree))
-               if rel.endswith("big.txt"))
+    big = next(
+        s
+        for rel, _f, s in readir_mod.walk_files(str(sample_tree))
+        if rel.endswith("big.txt")
+    )
     assert big > 2000
 
 
@@ -50,21 +55,31 @@ def test_walk_files_max_depth_prunes(readir_mod, sample_tree):
 
 
 def test_walk_files_filter_and_exclude(readir_mod, sample_tree):
-    only_md = [rel for rel, _f, _s in
-               readir_mod.walk_files(str(sample_tree), filter_exts={".md"})]
+    only_md = [
+        rel
+        for rel, _f, _s in readir_mod.walk_files(str(sample_tree), filter_exts={".md"})
+    ]
     assert only_md == ["top.md"]
 
-    no_png = [rel for rel, _f, _s in
-              readir_mod.walk_files(str(sample_tree), exclude_exts={".png"})]
+    no_png = [
+        rel
+        for rel, _f, _s in readir_mod.walk_files(
+            str(sample_tree), exclude_exts={".png"}
+        )
+    ]
     assert not any(rel.endswith(".png") for rel in no_png)
 
 
 # --- Unit: extension sets & text reading ---
 
+
 def test_readable_sets(readir_mod):
     assert ".md" in readir_mod.READABLE_TEXT
     assert ".docx" in readir_mod.READABLE_SPECIAL
-    assert readir_mod.READABLE_ALL == readir_mod.READABLE_TEXT | readir_mod.READABLE_SPECIAL
+    assert (
+        readir_mod.READABLE_ALL
+        == readir_mod.READABLE_TEXT | readir_mod.READABLE_SPECIAL
+    )
 
 
 def test_read_text_file_utf8(readir_mod, tmp_path):
@@ -82,6 +97,7 @@ def test_read_text_file_latin1_fallback(readir_mod, tmp_path):
 
 
 # --- Integration: tree ---
+
 
 def test_tree_lists_files(readir, sample_tree):
     out, err, code = readir("tree", sample_tree)
@@ -101,7 +117,7 @@ def test_tree_max_depth(readir, sample_tree):
     out, _, code = readir("tree", sample_tree, "--max-depth", "1")
     assert code == 0
     assert "top.md" in out
-    assert "report.docx" in out      # depth-1 file still shown
+    assert "report.docx" in out  # depth-1 file still shown
     assert "deepfile.txt" not in out  # depth-2 file pruned
 
 
@@ -121,6 +137,7 @@ def test_tree_non_directory(readir, tmp_path):
 
 
 # --- Integration: read ---
+
 
 def test_read_concatenates_readable(readir, sample_tree):
     out, err, code = readir("read", sample_tree)
@@ -167,6 +184,7 @@ def test_read_empty_dir(readir, tmp_path):
 
 # --- Integration: search ---
 
+
 def test_search_case_insensitive_across_formats(readir, sample_tree):
     out, err, code = readir("search", sample_tree, "budget")
     assert code == 0, err
@@ -204,6 +222,7 @@ def test_search_non_directory(readir, tmp_path):
 
 
 # --- Integration: help / no command ---
+
 
 def test_help_text(readir):
     out, _, code = readir("help")

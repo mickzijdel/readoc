@@ -26,6 +26,7 @@ BIN = REPO_ROOT / "bin"
 
 # --- Loading the scripts as modules (for unit tests) ---
 
+
 def load_script(name):
     """Load bin/<name> as a module despite its lack of a .py extension."""
     path = BIN / name
@@ -48,6 +49,7 @@ def readir_mod():
 
 # --- Driving the CLIs end-to-end (for integration tests) ---
 
+
 def run_cli(script, *args):
     """Run bin/<script> with the current interpreter; return (out, err, code)."""
     proc = subprocess.run(
@@ -62,6 +64,7 @@ def run_cli(script, *args):
 def readoc():
     def _run(*args):
         return run_cli("readoc", *args)
+
     return _run
 
 
@@ -69,16 +72,24 @@ def readoc():
 def readir():
     def _run(*args):
         return run_cli("readir", *args)
+
     return _run
 
 
 # --- Fixture file builders ---
 
-LONG_CELL = "this is a deliberately long spreadsheet cell well beyond forty characters wide"
+LONG_CELL = (
+    "this is a deliberately long spreadsheet cell well beyond forty characters wide"
+)
 
 
-def make_docx(path, heading1="Main Title", heading2="A Subsection",
-              body="Just a plain paragraph of body text.", table=True):
+def make_docx(
+    path,
+    heading1="Main Title",
+    heading2="A Subsection",
+    body="Just a plain paragraph of body text.",
+    table=True,
+):
     """Write a .docx with headings, a body paragraph, and (optionally) a table."""
     from docx import Document
 
@@ -170,14 +181,22 @@ def sample_tree(tmp_path):
     deeper.mkdir(parents=True)
     sub = root / "sub"
 
-    (root / "top.md").write_text("# Top\n\nSome markdown about budgets.\n", encoding="utf-8")
+    (root / "top.md").write_text(
+        "# Top\n\nSome markdown about budgets.\n", encoding="utf-8"
+    )
     (root / "data.csv").write_text("a,b,c\n1,2,3\n", encoding="utf-8")
     (root / "config.json").write_text('{"key": "value"}\n', encoding="utf-8")
-    (root / "notes.txt").write_text("Line one\nThe budget is tight\nLine three\n", encoding="utf-8")
+    (root / "notes.txt").write_text(
+        "Line one\nThe budget is tight\nLine three\n", encoding="utf-8"
+    )
     (root / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
 
-    make_docx(sub / "report.docx", heading1="BUDGET Overview",
-              body="Detailed budget discussion follows.", table=False)
+    make_docx(
+        sub / "report.docx",
+        heading1="BUDGET Overview",
+        body="Detailed budget discussion follows.",
+        table=False,
+    )
     (sub / "big.txt").write_text("padding line\n" * 300, encoding="utf-8")  # ~3.6 KB
 
     (deeper / "deepfile.txt").write_text("nothing special here\n", encoding="utf-8")
