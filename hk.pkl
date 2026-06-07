@@ -1,0 +1,37 @@
+amends "package://github.com/jdx/hk/releases/download/v1.45.0/hk@1.45.0#/Config.pkl"
+
+// The readoc/readir CLIs live in bin/ without a .py extension, so each glob
+// names them explicitly alongside the normal Python sources.
+local sources = List("**/*.py", "bin/readoc", "bin/readir")
+
+local linters = new Mapping<String, Step> {
+    ["ruff-check"] {
+        glob = sources
+        check = "uv run ruff check --force-exclude {{ files }}"
+        fix = "uv run ruff check --force-exclude --fix {{ files }}"
+    }
+    ["ruff-format"] {
+        glob = sources
+        check = "uv run ruff format --force-exclude --diff {{ files }}"
+        fix = "uv run ruff format --force-exclude {{ files }}"
+    }
+    ["pytest"] {
+        glob = sources
+        check = "uv run pytest"
+    }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = linters
+    }
+    ["fix"] {
+        fix = true
+        steps = linters
+    }
+    ["check"] {
+        steps = linters
+    }
+}

@@ -46,6 +46,20 @@ The tests generate their own sample `.docx`/`.xlsx`/`.pdf`/text fixtures in a te
 directory (nothing binary is committed) and drive `bin/readoc` and `bin/readir`
 end-to-end as subprocesses, alongside unit tests of the pure helpers.
 
+### Git hooks (hk)
+
+A [`mise`](https://mise.jdx.dev/) manifest pins the hook tooling (`hk`, `pkl`,
+`uv`) and an `hk.pkl` runs ruff + pytest on commit. Set it up once:
+
+```bash
+mise install     # provision hk, pkl, uv
+hk install       # install the pre-commit hook
+```
+
+The same checks run in CI ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+on every push and PR to `master`: `uv run ruff check .`, `uv run ruff format
+--check .`, and `uv run pytest`.
+
 ## Layout
 
 Source lives in `~/Stack/Programmeren/readoc` and is symlinked into

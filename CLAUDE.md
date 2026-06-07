@@ -20,3 +20,7 @@ uv run pytest
 Lint and format with `uv run ruff check .` and `uv run ruff format .`. Tests
 generate their own fixtures in a temp dir and run the CLIs as subprocesses; see
 `README.md` (Development / Testing) for details.
+
+`hk.pkl` (via `hk`, provisioned by `mise.toml`) runs ruff-check, ruff-format, and
+pytest on pre-commit; the same checks run in CI (`.github/workflows/ci.yml`) on
+push/PR to `master`. After changing the dev workflow, keep all three in sync.
