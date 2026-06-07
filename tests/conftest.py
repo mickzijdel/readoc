@@ -62,10 +62,15 @@ def readlib_mod():
 # --- Driving the CLIs end-to-end (for integration tests) ---
 
 
-def run_cli(script, *args):
-    """Run bin/<script> with the current interpreter; return (out, err, code)."""
+def run_cli(script, *args, stdin=None):
+    """Run bin/<script> with the current interpreter; return (out, err, code).
+
+    ``stdin`` (a string) is piped to the process when given — used by editdoc,
+    which reads its JSON edit spec from standard input.
+    """
     proc = subprocess.run(
         [sys.executable, str(BIN / script), *[str(a) for a in args]],
+        input=stdin,
         capture_output=True,
         text=True,
     )
@@ -84,6 +89,22 @@ def readoc():
 def readir():
     def _run(*args):
         return run_cli("readir", *args)
+
+    return _run
+
+
+@pytest.fixture
+def editdoc():
+    """Run bin/editdoc with a JSON edit ``spec`` piped on stdin.
+
+    ``spec`` may be a dict / list (json-encoded for you) or a raw string (passed
+    through verbatim, for malformed-JSON tests). Returns (out, err, code).
+    """
+    import json
+
+    def _run(target, spec, *args):
+        stdin = spec if isinstance(spec, str) else json.dumps(spec)
+        return run_cli("editdoc", target, *args, stdin=stdin)
 
     return _run
 

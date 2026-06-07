@@ -1,0 +1,117 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "python-docx",
+#     "openpyxl",
+# ]
+# ///
+"""Apply exact-match and structural edits to .docx and .xlsx files.
+
+editdoc is to binary Office documents what Claude's built-in Edit tool is to
+text files: it replaces *exact* strings, fails loudly when a match is missing or
+ambiguous, and never half-applies a batch. The target file is given as an argv;
+the edit(s) are a JSON spec read from stdin — a single object or an array of
+objects, dispatched by which keys each carries:
+
+  .docx in-paragraph replace : {"old_string", "new_string", "replace_all"?}
+  .docx paragraph/range op   : {"start_contains", "end_contains"?, "new_text"}
+  .xlsx cell edit            : {"sheet", "cell", "value"}
+
+All edits are validated before any are applied, and the file is saved
+crash-safely (temp file + atomic replace), so a failure leaves the original
+byte-for-byte intact.
+"""
+
+import json
+import os
+import sys
+
+
+SUPPORTED = {".docx", ".xlsx"}
+
+
+class EditError(Exception):
+    """A user-facing edit failure (bad match, ambiguity, invalid address …)."""
+
+
+USAGE = (
+    "Usage: editdoc <file.docx|file.xlsx>  < spec.json\n"
+    "\n"
+    "Reads a JSON edit spec (one object or an array of objects) from stdin and\n"
+    "applies it to the file. Edit types are dispatched by their keys:\n"
+    '  docx text replace : {"old_string": "...", "new_string": "...", "replace_all": false}\n'
+    '  docx paragraph op : {"start_contains": "...", "end_contains": "...", "new_text": "..."}\n'
+    '  xlsx cell edit    : {"sheet": "...", "cell": "B2", "value": "..."}\n'
+)
+
+
+def fail(message):
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def load_spec(raw):
+    """Parse the stdin spec into a list of edit dicts, or raise EditError."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise EditError(f"Invalid JSON on stdin: {e}")
+    if isinstance(data, dict):
+        data = [data]
+    if not isinstance(data, list):
+        raise EditError("JSON spec must be an object or an array of objects.")
+    for i, edit in enumerate(data):
+        if not isinstance(edit, dict):
+            raise EditError(f"edit {i + 1}: each edit must be a JSON object.")
+    return data
+
+
+def apply_docx_edits(path, edits):
+    raise NotImplementedError
+
+
+def apply_xlsx_edits(path, edits):
+    raise NotImplementedError
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    files = [a for a in argv if not a.startswith("-")]
+
+    if not files:
+        print(USAGE)
+        sys.exit(1)
+
+    filepath = files[0]
+    if not os.path.exists(filepath):
+        fail(f"Error: File not found: {filepath}")
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext not in SUPPORTED:
+        fail(
+            f"Error: Unsupported file type '{ext}' for {filepath}\n"
+            "Supported: .docx, .xlsx"
+        )
+
+    raw = sys.stdin.read()
+    try:
+        edits = load_spec(raw)
+    except EditError as e:
+        fail(f"Error: {e}")
+
+    if not edits:
+        # A valid no-op: nothing to do, file left untouched.
+        sys.exit(0)
+
+    try:
+        if ext == ".docx":
+            apply_docx_edits(filepath, edits)
+        else:
+            apply_xlsx_edits(filepath, edits)
+    except EditError as e:
+        fail(str(e))
+
+
+if __name__ == "__main__":
+    main()
