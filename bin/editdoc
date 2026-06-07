@@ -25,9 +25,11 @@ byte-for-byte intact.
 
 import copy
 import json
+import math
 import os
 import sys
 import tempfile
+import zipfile
 
 
 SUPPORTED = {".docx", ".xlsx"}
@@ -38,13 +40,16 @@ class EditError(Exception):
 
 
 USAGE = (
-    "Usage: editdoc <file.docx|file.xlsx>  < spec.json\n"
+    "Usage: editdoc [--force] <file.docx|file.xlsx>  < spec.json\n"
     "\n"
     "Reads a JSON edit spec (one object or an array of objects) from stdin and\n"
     "applies it to the file. Edit types are dispatched by their keys:\n"
     '  docx text replace : {"old_string": "...", "new_string": "...", "replace_all": false}\n'
     '  docx paragraph op : {"start_contains": "...", "end_contains": "...", "new_text": "..."}\n'
     '  xlsx cell edit    : {"sheet": "...", "cell": "B2", "value": "..."}\n'
+    "\n"
+    "--force (alias --allow-lossy): edit an .xlsx with charts/macros/pivots/images\n"
+    "anyway (those features are dropped on save).\n"
 )
 
 
@@ -453,17 +458,28 @@ def apply_docx_edits(path, edits):
 
 
 def coerce_value(value):
-    """Coerce a JSON value for cell assignment: numeric-looking strings become
-    int/float so spreadsheets get real numbers; everything else is left as-is."""
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            pass
-        try:
-            return float(value)
-        except ValueError:
-            pass
+    """Coerce a string cell value to a number only when it round-trips exactly.
+
+    A string becomes int/float **only if its canonical repr matches the input** —
+    so ordinary numbers (``"1250"``, ``"-42"``, ``"3.5"``) become numbers, while
+    leading-zero codes (``"00501"``), underscores (``"1_000"``), scientific
+    notation (``"1e3"``), and non-finite values (``"nan"``, ``"inf"``) are kept
+    as text rather than being truncated or silently blanking the cell. Non-string
+    values (JSON numbers, booleans, null) pass through untouched."""
+    if not isinstance(value, str):
+        return value
+    s = value.strip()
+    try:
+        if str(int(s)) == s:
+            return int(s)
+    except ValueError:
+        pass
+    try:
+        f = float(s)
+        if math.isfinite(f) and repr(f) == s:
+            return f
+    except ValueError:
+        pass
     return value
 
 
@@ -491,9 +507,39 @@ def apply_one_xlsx_edit(wb, edit, index):
     return [f"✓ edit {index + 1}: set {sheet}!{cell} = {value}"]
 
 
-def apply_xlsx_edits(path, edits):
+def detect_lossy_features(path):
+    """Return a sorted list of workbook features openpyxl drops on save (charts,
+    pivot tables, drawings/images, macros), detected by scanning the .xlsx zip.
+    Empty list means a plain data workbook that round-trips safely."""
+    found = set()
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+    except Exception:
+        return []
+    for n in names:
+        if n.startswith("xl/charts/"):
+            found.add("charts")
+        elif n.startswith("xl/pivotTables/"):
+            found.add("pivot tables")
+        elif n.startswith("xl/drawings/"):
+            found.add("drawings/images")
+        elif n.endswith("vbaProject.bin"):
+            found.add("macros")
+    return sorted(found)
+
+
+def apply_xlsx_edits(path, edits, force=False):
     from openpyxl import load_workbook
 
+    if not force:
+        lossy = detect_lossy_features(path)
+        if lossy:
+            raise EditError(
+                f"this workbook contains {', '.join(lossy)}, which openpyxl drops "
+                "when it rewrites the file — editing it here would lose them. "
+                "Re-run with --force to edit anyway (accepting that loss)."
+            )
     wb = load_workbook(path)
     outputs = []
     for i, edit in enumerate(edits):
@@ -508,9 +554,21 @@ def apply_xlsx_edits(path, edits):
         print("\n".join(outputs))
 
 
+ALLOWED_FLAGS = {"--force", "--allow-lossy"}
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    flags = [a for a in argv if a.startswith("-")]
     files = [a for a in argv if not a.startswith("-")]
+
+    unknown = [f for f in flags if f not in ALLOWED_FLAGS]
+    if unknown:
+        fail(
+            f"Error: unknown flag(s): {', '.join(unknown)}\n"
+            f"Supported flags: {', '.join(sorted(ALLOWED_FLAGS))}"
+        )
+    force = bool(flags)  # any allowed flag present means --force/--allow-lossy
 
     if not files:
         print(USAGE)
@@ -547,7 +605,7 @@ def main(argv=None):
         if ext == ".docx":
             apply_docx_edits(filepath, edits)
         else:
-            apply_xlsx_edits(filepath, edits)
+            apply_xlsx_edits(filepath, edits, force=force)
     except EditError as e:
         fail(str(e))
 

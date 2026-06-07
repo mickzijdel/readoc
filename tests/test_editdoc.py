@@ -76,6 +76,26 @@ def make_xlsx(path, rows=(("Quarter", "Amount"), ("Q1", 1000)), sheet="Budget"):
     return path
 
 
+def make_xlsx_with_chart(path, sheet="Budget"):
+    """Write an .xlsx that embeds a bar chart — a feature openpyxl drops on save,
+    so editdoc must refuse to edit it without --force."""
+    from openpyxl.chart import BarChart, Reference
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet
+    ws.append(["Quarter", "Amount"])
+    ws.append(["Q1", 1000])
+    ws.append(["Q2", 1500])
+    chart = BarChart()
+    chart.add_data(
+        Reference(ws, min_col=2, min_row=1, max_row=3), titles_from_data=True
+    )
+    ws.add_chart(chart, "E5")
+    wb.save(str(path))
+    return path
+
+
 def cell_value(path, sheet, coord):
     wb = load_workbook(str(path))
     return wb[sheet][coord].value
@@ -567,6 +587,99 @@ def test_docx_empty_end_contains_rejected(editdoc, tmp_path):
         f, {"start_contains": "alpha", "end_contains": "", "new_text": "x"}
     )
     assert code == 1
+
+
+# --- Review round 2: xlsx coercion edges + lossy-feature detection ---
+
+
+def test_xlsx_leading_zero_kept_as_string(editdoc, tmp_path):
+    # Zip/account codes must not be truncated to ints.
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "00501"})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "A5") == "00501"
+
+
+def test_xlsx_nan_inf_kept_as_string_not_blanked(editdoc, tmp_path):
+    # float("nan")/("inf") parse but openpyxl can't store them — they must NOT
+    # silently blank the cell. Keep them as text.
+    f = make_xlsx(tmp_path / "x.xlsx")
+    for cell, val in (("A5", "nan"), ("A6", "inf"), ("A7", "-inf")):
+        out, err, code = editdoc(f, {"sheet": "Budget", "cell": cell, "value": val})
+        assert code == 0, err
+    assert cell_value(f, "Budget", "A5") == "nan"
+    assert cell_value(f, "Budget", "A6") == "inf"
+    assert cell_value(f, "Budget", "A7") == "-inf"
+
+
+def test_xlsx_scientific_and_underscore_kept_as_string(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "1e3"})
+    editdoc(f, {"sheet": "Budget", "cell": "A6", "value": "1_000"})
+    assert cell_value(f, "Budget", "A5") == "1e3"
+    assert cell_value(f, "Budget", "A6") == "1_000"
+
+
+def test_xlsx_plain_integer_still_coerced(editdoc, tmp_path):
+    # The canonical-round-trip rule must still coerce ordinary numbers.
+    f = make_xlsx(tmp_path / "x.xlsx")
+    editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "1250"})
+    editdoc(f, {"sheet": "Budget", "cell": "A6", "value": "-42"})
+    editdoc(f, {"sheet": "Budget", "cell": "A7", "value": "3.5"})
+    assert cell_value(f, "Budget", "A5") == 1250
+    assert cell_value(f, "Budget", "A6") == -42
+    assert cell_value(f, "Budget", "A7") == 3.5
+
+
+def test_xlsx_null_clears_cell(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx", rows=(("Quarter", "Amount"), ("Q1", 1000)))
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": None})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "B2") is None
+
+
+def test_xlsx_bool_stored(editdoc, tmp_path):
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": True})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "A5") is True
+
+
+def test_xlsx_chart_workbook_refused_without_force(editdoc, tmp_path):
+    f = make_xlsx_with_chart(tmp_path / "x.xlsx")
+    before = sha256(f)
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 1
+    assert "chart" in err.lower()
+    assert "--force" in err or "force" in err.lower()
+    assert sha256(f) == before  # not rewritten, chart preserved
+
+
+def test_xlsx_chart_workbook_editable_with_force(editdoc, tmp_path):
+    f = make_xlsx_with_chart(tmp_path / "x.xlsx")
+    out, err, code = editdoc(
+        f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"}, "--force"
+    )
+    assert code == 0, err
+    assert cell_value(f, "Budget", "A2") == "Q1x"
+
+
+def test_xlsx_plain_workbook_not_refused(editdoc, tmp_path):
+    # A chart-free data sheet edits with no friction and no flag.
+    f = make_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
+    assert code == 0, err
+
+
+def test_unknown_flag_rejected(tmp_path):
+    from conftest import run_cli
+
+    f = make_paras_docx(tmp_path / "x.docx", ["hello"])
+    out, err, code = run_cli(
+        "editdoc", f, "--frce", stdin='{"old_string": "hello", "new_string": "hi"}'
+    )
+    assert code == 1
+    assert "flag" in err.lower() or "unknown" in err.lower()
 
 
 def test_multiple_files_rejected(tmp_path):

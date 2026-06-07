@@ -124,6 +124,9 @@ echo '{"sheet": "Budget", "cell": "B2", "value": "1250"}' | editdoc book.xlsx
 
 # Batch: an array is applied all-or-nothing
 echo '[{"old_string":"a","new_string":"b"},{"sheet":"S","cell":"A1","value":1}]' | editdoc f.docx
+
+# Force editing an xlsx that has charts/macros/etc (see Limitations)
+echo '{"sheet":"Budget","cell":"B2","value":42}' | editdoc book.xlsx --force
 ```
 
 ### docx edit types
@@ -140,6 +143,16 @@ echo '[{"old_string":"a","new_string":"b"},{"sheet":"S","cell":"A1","value":1}]'
   `\n` into one-or-more paragraphs that inherit the original's style. Empty
   `new_text` deletes the block. A range must stay within one container (the body,
   or a single table cell).
+
+### xlsx edit type and value coercion
+
+- **Cell set** — `{"sheet", "cell", "value"}`. The sheet must exist and the cell
+  must be a valid reference (`B2`). A **string** `value` becomes a number **only
+  when it round-trips exactly**: `"1250"`→`1250`, `"-42"`→`-42`, `"3.5"`→`3.5`,
+  but codes that would be corrupted stay text — leading zeros (`"00501"`),
+  underscores (`"1_000"`), scientific notation (`"1e3"`), and non-finite values
+  (`"nan"`, `"inf"`). Pass a JSON number (`42`, `3.5`) to force numeric storage; a
+  JSON boolean stores a boolean; JSON `null` clears the cell.
 
 ### Why a naive find/replace fails on Word (and how editdoc handles it)
 
@@ -180,9 +193,11 @@ confirm.
 - **Nested tables:** only top-level table cells are reached; text inside a table
   nested within a cell is not found.
 - **xlsx fidelity:** openpyxl rewrites the whole workbook on save and can drop
-  features it doesn't model (charts, some data validations, macros). For
-  data/text edits this is fine; avoid `editdoc` on workbooks whose charts/macros
-  must survive.
+  features it doesn't model. `editdoc` **scans the workbook and refuses** when it
+  detects charts, pivot tables, drawings/images, or macros, naming what would be
+  lost — pass `--force` (or `--allow-lossy`) to edit anyway and accept the loss.
+  Plain data workbooks edit with no flag. (Detection is by file contents, so it
+  can't see every lossy feature; `--force` skips the check entirely.)
 - **No `.pdf` editing** (no clean text reflow).
 
 ## Requirements

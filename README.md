@@ -41,9 +41,15 @@ echo '{"old_string": "due Monday", "new_string": "due Friday"}' | editdoc report
 # Word: replace a contiguous block of paragraphs (split on newlines, "" deletes)
 echo '{"start_contains": "Old intro", "end_contains": "…final line", "new_text": "New A\nNew B"}' | editdoc report.docx
 
-# Excel: set a cell (numeric-looking strings are stored as numbers)
+# Excel: set a cell (numeric strings stored as numbers only if they round-trip exactly)
 echo '{"sheet": "Budget", "cell": "B2", "value": "1250"}' | editdoc book.xlsx
 ```
+
+For spreadsheets, a string `value` becomes a number only when it round-trips
+exactly (`"1250"`→`1250`), so codes like `"00501"` stay text. `editdoc` refuses
+to edit an `.xlsx` that contains charts, pivot tables, images, or macros (which
+openpyxl would drop on save), naming what would be lost; pass `--force` to edit
+anyway.
 
 Word text lives in formatting *runs*, so a visible sentence is often split across
 several XML fragments — `editdoc` matches against each paragraph's reconstructed
