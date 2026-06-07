@@ -1,17 +1,17 @@
 ---
 name: reading-documents
-description: Use when you need to read the contents of Office documents (.docx, .xlsx, .pdf) or explore/search a folder of mixed documents. Provides the readoc and readir CLIs. Reach for this whenever a task involves a Word doc, Excel sheet, PDF, or a directory of such files.
+description: Use when you need to read OR edit the contents of Office documents (.docx, .xlsx, .pdf) or explore/search a folder of mixed documents. Provides the readoc, readir, and editdoc CLIs. Reach for this whenever a task involves reading or modifying a Word doc, Excel sheet, PDF, or a directory of such files.
 ---
 
-# Reading Documents
+# Reading & Editing Documents
 
-Two CLIs ship with this plugin under `${CLAUDE_PLUGIN_ROOT}/bin/`. They are also
-symlinked onto `PATH` as `readoc` and `readir`, so you can usually call them by
-bare name.
+Three CLIs ship with this plugin under `${CLAUDE_PLUGIN_ROOT}/bin/`. They are also
+symlinked onto `PATH` as `readoc`, `readir`, and `editdoc`, so you can usually
+call them by bare name.
 
-The standard `Read` tool cannot parse `.docx`/`.xlsx`/`.pdf`. Use these instead.
-**Neither tool truncates content** — spreadsheet cells, pages, and tables are
-emitted in full.
+The standard `Read`/`Edit`/`Write` tools cannot parse or modify
+`.docx`/`.xlsx`/`.pdf`. Use these instead. **The readers never truncate
+content** — spreadsheet cells, pages, and tables are emitted in full.
 
 ## `readoc` — read specific files
 
@@ -102,9 +102,76 @@ huge files unintentionally. Skipped files are **listed** in the skip report
 (never silently dropped, never truncated). Raise the ceiling with
 `--max-size <KB>` when you genuinely need a large file.
 
+## `editdoc` — edit .docx / .xlsx files
+
+`editdoc` is to binary Office documents what the built-in `Edit` tool is to text
+files. It takes the target file as an argv and reads a JSON **edit spec from
+stdin** — a single object, or an array of objects applied as one atomic batch.
+The edit type is chosen by which keys the object carries:
+
+```bash
+# 1) Word — exact in-paragraph replace (mirrors the Edit tool)
+echo '{"old_string": "due Monday", "new_string": "due Friday"}' | editdoc report.docx
+echo '{"old_string": "TODO", "new_string": "Done", "replace_all": true}' | editdoc report.docx
+
+# 2) Word — paragraph / range replace (structural)
+echo '{"start_contains": "Quarterly results", "new_text": "Replaced paragraph."}' | editdoc report.docx
+echo '{"start_contains": "First old para", "end_contains": "last old para", "new_text": "New A\nNew B"}' | editdoc report.docx
+echo '{"start_contains": "Stale section", "new_text": ""}' | editdoc report.docx   # "" deletes
+
+# 3) Excel — set a cell
+echo '{"sheet": "Budget", "cell": "B2", "value": "1250"}' | editdoc book.xlsx
+
+# Batch: an array is applied all-or-nothing
+echo '[{"old_string":"a","new_string":"b"},{"sheet":"S","cell":"A1","value":1}]' | editdoc f.docx
+```
+
+### docx edit types
+
+- **In-paragraph replace** — `{"old_string", "new_string", "replace_all"?}`.
+  `old_string` is matched **exactly** (whitespace included) against each
+  paragraph's visible text, across body paragraphs **and table cells**. It must
+  be **unique** in the document; if it appears more than once you get a loud
+  error — add surrounding context to disambiguate, or set `"replace_all": true`.
+  A match cannot span a paragraph break (no newline in `old_string`).
+- **Paragraph / range replace** — `{"start_contains", "end_contains"?, "new_text"}`.
+  `start_contains` (and optional `end_contains`) each uniquely identify a
+  paragraph; the inclusive block between them is replaced by `new_text`, split on
+  `\n` into one-or-more paragraphs that inherit the original's style. Empty
+  `new_text` deletes the block. A range must stay within one container (the body,
+  or a single table cell).
+
+### Why a naive find/replace fails on Word (and how editdoc handles it)
+
+Word stores a visible sentence as a chain of formatting **runs** — `"the report
+is due"` might be `["the ", "report", " is due"]` with the middle run bold. A
+literal search on the raw XML usually misses it. `editdoc` reconstructs each
+paragraph's text, matches there, and rewrites the runs so the replacement
+**inherits the first matched run's formatting** while untouched text keeps its
+own. After each edit it prints a confirmation line plus the affected paragraph
+rendered as Markdown (`**bold**`, `*italic*`, heading `#`) so you can verify the
+formatting landed as intended.
+
+### Multi-paragraph rewrites
+
+In-paragraph replace can't cross a paragraph break. To rewrite several
+consecutive paragraphs at once, use a **single range replace**: anchor the first
+paragraph with `start_contains`, the last with `end_contains`, and pass the full
+new text in `new_text` (newline-separated for multiple paragraphs). This turns,
+say, a five-paragraph block into three paragraphs in one atomic edit — no
+per-paragraph delete chain.
+
+### Safety
+
+Every edit is validated before the file is written; if any edit in a batch fails,
+**nothing** is written (the file stays byte-identical) and `editdoc` exits
+non-zero with a specific error. Saves go through a temp file + atomic replace, so
+a crash never corrupts the original. Read the result back with `readoc` to
+confirm. Note: `editdoc` does not edit `.pdf` (no clean text reflow).
+
 ## Requirements
 [`uv`](https://docs.astral.sh/uv/) must be on `PATH`, it's the only prerequisite.
-Both CLIs declare their Python dependencies (`python-docx`, `openpyxl`, `pymupdf`,
-for the `.docx`, `.xlsx`, and `.pdf` readers respectively) inline via PEP 723 and
-run through `uv run --script`, so uv installs them into a cached environment
-automatically on first use.
+Each CLI declares its Python dependencies inline via PEP 723 and runs through
+`uv run --script`, so uv installs them into a cached environment automatically on
+first use: `readoc`/`readir` use `python-docx`, `openpyxl`, and `pymupdf` (for
+`.docx`, `.xlsx`, and `.pdf`); `editdoc` uses `python-docx` and `openpyxl`.

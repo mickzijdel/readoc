@@ -25,7 +25,7 @@ package = false
 target-version = "py39"
 # The CLIs live in bin/ without a .py extension, so ruff won't discover them by
 # directory traversal unless we include them explicitly.
-extend-include = ["bin/readoc", "bin/readir"]
+extend-include = ["bin/readoc", "bin/readir", "bin/editdoc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

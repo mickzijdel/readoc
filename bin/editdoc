@@ -433,9 +433,7 @@ def apply_one_xlsx_edit(wb, edit, index):
     sheet = edit.get("sheet")
     cell = edit.get("cell")
     if sheet is None or cell is None or "value" not in edit:
-        raise EditError(
-            f"edit {index + 1}: an xlsx edit needs sheet, cell, and value."
-        )
+        raise EditError(f"edit {index + 1}: an xlsx edit needs sheet, cell, and value.")
     if sheet not in wb.sheetnames:
         available = ", ".join(wb.sheetnames)
         raise EditError(

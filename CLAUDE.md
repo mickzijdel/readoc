@@ -8,9 +8,11 @@ Make sure to check all of the following and make sure they are up-to-date after 
 
 ## Tests
 
-The `bin/readoc` and `bin/readir` CLIs are covered by a pytest suite in `tests/`.
+The `bin/readoc`, `bin/readir`, and `bin/editdoc` CLIs are covered by a pytest
+suite in `tests/`.
 Dev tooling is managed by `pyproject.toml` (a dev-only virtual uv project,
-`package = false`). Before changing either script, establish a green baseline:
+`package = false`). Before changing any of these scripts, establish a green
+baseline:
 
 ```bash
 uv sync          # first time / after dependency changes
