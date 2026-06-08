@@ -6,6 +6,8 @@ Make sure to check all of the following and make sure they are up-to-date after 
 5. CLAUDE.md
 6. tests/ — keep the pytest suite green and add coverage for behaviour you change
 
+Bump the plugin version on every commit. Patch version for small fixes, minor version for more substantial changes (new skill or tool).
+
 ## Tests
 
 The `bin/readoc`, `bin/readir`, and `bin/editdoc` CLIs are covered by a pytest
