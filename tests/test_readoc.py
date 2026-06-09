@@ -2,22 +2,13 @@
 
 import pytest
 
+from conftest import HUMAN_SIZE_CASES
+
 
 # --- Unit: pure helpers ---
 
 
-@pytest.mark.parametrize(
-    "size, expected",
-    [
-        (0, "0 B"),
-        (1023, "1023 B"),
-        (1024, "1.0 KB"),
-        (1536, "1.5 KB"),
-        (1024 * 1024, "1.0 MB"),
-        (int(1.5 * 1024 * 1024), "1.5 MB"),
-        (1024**3, "1.0 GB"),
-    ],
-)
+@pytest.mark.parametrize("size, expected", HUMAN_SIZE_CASES)
 def test_human_size(readoc_mod, size, expected):
     assert readoc_mod.human_size(size) == expected
 

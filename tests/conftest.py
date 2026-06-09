@@ -23,6 +23,19 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BIN = REPO_ROOT / "bin"
 
+# Shared cases for human_size, exercised against both the shared _readlib module
+# and the readoc CLI that re-exports it. Defined once here so the two parametrize
+# tables don't duplicate (the duplication audit flags verbatim clones).
+HUMAN_SIZE_CASES = [
+    (0, "0 B"),
+    (1023, "1023 B"),
+    (1024, "1.0 KB"),
+    (1536, "1.5 KB"),
+    (1024 * 1024, "1.0 MB"),
+    (int(1.5 * 1024 * 1024), "1.5 MB"),
+    (1024**3, "1.0 GB"),
+]
+
 
 # --- Loading the scripts as modules (for unit tests) ---
 

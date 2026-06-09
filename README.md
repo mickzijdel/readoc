@@ -106,16 +106,22 @@ re-reading the file — and assert formatting survives.
 ### Git hooks (hk)
 
 A [`mise`](https://mise.jdx.dev/) manifest pins the hook tooling (`hk`, `pkl`,
-`uv`) and an `hk.pkl` runs ruff + pytest on commit. Set it up once:
+`uv`, `gitleaks`, `node`) reproducibly via a committed `mise.lock`, and an
+`hk.pkl` runs the full suite on commit. Set it up once:
 
 ```bash
-mise install     # provision hk, pkl, uv
+mise install     # provision hk, pkl, uv, gitleaks, node (verified against mise.lock)
 hk install       # install the pre-commit hook
+hk run check     # run the whole suite manually
 ```
 
-The same checks run in CI ([.github/workflows/ci.yml](.github/workflows/ci.yml))
-on every push and PR to `master`: `uv run ruff check .`, `uv run ruff format
---check .`, and `uv run pytest`.
+The pre-commit hook (and CI, [.github/workflows/ci.yml](.github/workflows/ci.yml),
+on every push and PR to `master`) runs: `ruff check` / `ruff format`, `pytest`,
+`vulture` (dead-code), `jscpd` (duplication, via `npx`), `gitleaks` (secret
+scanning, allowlisting gitignored runtime paths via `.gitleaks.toml`), and a
+large-file guard. The repo follows Mick's dev-env standard
+(`dev-hooks:dev-env-setup`, v10); `uv` enforces a 4-day dependency cooldown
+(`[tool.uv] exclude-newer`) as supply-chain seasoning.
 
 ## Layout
 

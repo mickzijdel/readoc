@@ -25,6 +25,18 @@ Lint and format with `uv run ruff check .` and `uv run ruff format .`. Tests
 generate their own fixtures in a temp dir and run the CLIs as subprocesses; see
 `README.md` (Development / Testing) for details.
 
-`hk.pkl` (via `hk`, provisioned by `mise.toml`) runs ruff-check, ruff-format, and
-pytest on pre-commit; the same checks run in CI (`.github/workflows/ci.yml`) on
-push/PR to `master`. After changing the dev workflow, keep all three in sync.
+`hk.pkl` (via `hk`, provisioned by `mise.toml`) runs ruff-check, ruff-format,
+pytest, the audits (vulture dead-code, jscpd duplication), gitleaks secret
+scanning, and a large-file guard on pre-commit; the same checks run in CI
+(`.github/workflows/ci.yml`) on push/PR to `master`. After changing the dev
+workflow, keep all three in sync. Run the whole suite locally with
+`hk run check --all`.
+
+This repo follows Mick's dev-env standard (`dev-hooks:dev-env-setup`), version
+stamped via `DEV_ENV_VERSION` in `mise.toml` (currently **v10**). Tool versions
+are pinned reproducibly in the committed `mise.lock`; bump them with
+`mise upgrade` (commit the diff). `uv` enforces a 4-day dependency cooldown
+(`[tool.uv] exclude-newer`). Key dev tooling: hk + pkl (pre-commit), uv (Python
+env, 3.12 in CI), ruff (lint/format), pytest, vulture (dead code), jscpd
+(duplication, via npx), gitleaks (secrets). `.gitleaks.toml` allowlists
+gitignored runtime paths so `gitleaks dir`'s whole-tree scan stays green.

@@ -2,3 +2,20 @@
 hk = "latest"
 pkl = "latest"
 uv = "latest"
+gitleaks = "latest"
+node = "latest"            # provides npx, used to run jscpd 5.x (`npx --yes jscpd@latest`)
+# jscpd (duplication) runs via npx — see hk.pkl / .jscpd.json. It is NOT a mise tool: jscpd 5.x
+# is a Rust binary distributed through npm optional platform packages, which npx resolves but the
+# mise npm backend does not. vulture (dead-code) is a dev dependency, run via `uv run vulture`.
+
+[settings]
+# Maintain mise.lock (resolved versions + per-platform checksums) on every install.
+# Tools stay spec'd "latest"; the lock records what that resolved to so installs are
+# reproducible + checksum-verified (aqua-backed tools add Cosign/SLSA). Upgrade with
+# `mise upgrade`, then commit the changed mise.lock.
+lockfile = true
+
+[env]
+# dev-env standard version this repo targets (dev-hooks:dev-env-setup). Do not
+# hand-edit — bump it by running the skill's upgrade path.
+DEV_ENV_VERSION = "10"

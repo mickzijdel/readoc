@@ -1,8 +1,11 @@
+// dev-env standard (dev-hooks:dev-env-setup) — version tracked via DEV_ENV_VERSION in mise.toml.
 amends "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.46.0/hk@1.46.0#/Builtins.pkl"
 
-// The readoc/readir CLIs live in bin/ without a .py extension, so each glob
-// names them explicitly alongside the normal Python sources.
-local sources = List("**/*.py", "bin/readoc", "bin/readir")
+// The readoc/readir/editdoc CLIs live in bin/ without a .py extension, so each glob
+// names them explicitly alongside the normal Python sources. (jscpd keys off
+// extensions, so verbatim duplication in the extensionless CLIs stays uncovered.)
+local sources = List("**/*.py", "bin/readoc", "bin/readir", "bin/editdoc")
 
 local linters = new Mapping<String, Step> {
     ["ruff-check"] {
@@ -19,6 +22,35 @@ local linters = new Mapping<String, Step> {
         glob = sources
         check = "uv run pytest"
     }
+    // --- Audits (dead-code + duplication) ---------------------------------------
+    // These run on pre-commit too (not just `check`/CI): vulture is ~0.15s and jscpd
+    // ~1s warm online (cooldown resolve + scan), so catching dead code / clones before
+    // push is worth it. Both carry a glob, so they only fire when a matching file is
+    // staged (a docs-only commit skips them). They scan the whole tree, not just {{ files }}.
+    // Dead code. Scans `.` (all *.py, excluding .venv/build) plus any extensionless tracked
+    // file with a python/uv shebang (PEP 723 CLIs like bin/readoc, bin/editdoc).
+    ["vulture"] {
+        glob = sources
+        check = "uv run vulture --min-confidence 80 --exclude '*/.venv/*,.venv,build,dist' . $(git ls-files ':!*.py' | while IFS= read -r f; do head -n1 \"$f\" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\\n' \"$f\"; done)"
+    }
+    // Duplication. jscpd 5.x via npx (the npm `cpd` binary needs platform packages that npx
+    // resolves but the mise npm backend does not). Config in `.jscpd.json` (ai + threshold
+    // reporters; threshold 0 = fail on any clone). `-f python` scopes to code (no config
+    // equivalent) so docs/configs aren't flagged. (See SKILL.md › jscpd note.)
+    // Version policy: track latest with a 4-day cooldown (never run a release < 4 days old —
+    // supply-chain seasoning), floored at v5 (the major .jscpd.json targets) so it can't
+    // regress to v4 while v5 is still maturing. Online → resolve the newest version >= 4 days
+    // old (`npx --before`), fall back to `latest` when that lands below the v5 floor, then run
+    // it (the real gate — exit reflects duplication). Offline → run the cached jscpd. No cache
+    // + offline → warn and pass, so a commit is never blocked by an unreachable registry.
+    ["jscpd"] {
+        glob = "**/*.py"
+        check = "cutoff=$(date -u -d '4 days ago' +%F 2>/dev/null || date -u -v-4d +%F); if curl -sf -m 3 https://registry.npmjs.org/ >/dev/null 2>&1; then ver=$(npx --before=$cutoff --yes jscpd --version 2>/dev/null | awk 'END{print $NF}'); case $ver in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac; npx --yes jscpd@$ver . -f python; elif npx --offline jscpd --version >/dev/null 2>&1; then npx --offline jscpd . -f python; else echo 'jscpd unavailable offline; skipping duplication check'; fi"
+    }
+    // Secret scanning (defense-in-depth alongside fnox). hk builtin.
+    ["gitleaks"] = Builtins.gitleaks
+    // Block accidentally-committed large files. hk builtin.
+    ["check-added-large-files"] = Builtins.check_added_large_files
 }
 
 hooks {
@@ -31,6 +63,8 @@ hooks {
         fix = true
         steps = linters
     }
+    // `check` is the full suite CI runs. The audits (vulture, jscpd) now live in `linters`,
+    // so they already run on pre-commit; `check` is just the same set under one name.
     ["check"] {
         steps = linters
     }

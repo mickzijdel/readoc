@@ -16,10 +16,15 @@ dev = [
     "openpyxl",
     "pymupdf",
     "ruff",
+    "vulture",
 ]
 
 [tool.uv]
 package = false
+# Supply-chain cooldown: don't resolve dependency versions published in the last
+# 4 days, so a malicious release is given time to be caught/yanked before we pull it.
+# Rolling duration so the window moves with the current date. (dev-env standard v6+.)
+exclude-newer = "4 days"
 
 [tool.ruff]
 target-version = "py39"

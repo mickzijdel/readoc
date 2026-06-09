@@ -15,7 +15,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "0.11.x"
           enable-cache: true
 
       - name: Set up Python
@@ -37,7 +36,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0
         with:
-          version: "0.11.x"
           enable-cache: true
 
       - name: Set up Python
@@ -48,3 +46,53 @@ jobs:
 
       - name: Run tests
         run: uv run pytest --tb=short
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required to scan pull_request events
+
+  # Noisier audits — mirror the hk `check` hook (not run on pre-commit).
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync
+      - name: Dead code (vulture, incl. extensionless PEP 723 scripts)
+        run: |
+          # tracked .py + any tracked file with a python/uv shebang (e.g. bin/readoc).
+          # git ls-files excludes gitignored .venv automatically.
+          files=$( { git ls-files '*.py'; git ls-files | while IFS= read -r f; do head -n1 "$f" 2>/dev/null | grep -qE '^#!.*(python|uv run)' && printf '%s\n' "$f"; done; } | sort -u )
+          if [ -n "$files" ]; then uv run vulture --min-confidence 80 $files; else echo "no python files"; fi
+      - name: Duplication (jscpd)
+        # -f scopes to code formats (no config equivalent); .jscpd.json carries
+        # minTokens/threshold/reporters/gitignore/ignorePattern.
+        # Match the pre-commit jscpd version: latest on a 4-day cooldown, floored at v5
+        # (see hk.pkl / SKILL.md › jscpd version policy) so local and CI gates agree.
+        run: |
+          cutoff=$(date -u -d '4 days ago' +%F)
+          ver=$(npx --before="$cutoff" --yes jscpd --version 2>/dev/null | awk 'END{print $NF}')
+          case "$ver" in ''|0.*|1.*|2.*|3.*|4.*) ver=latest;; esac
+          npx --yes jscpd@"$ver" . -f python
+      - name: Large files
+        run: |
+          limit=512000
+          large=$(git ls-files | while read -r f; do
+            s=$(stat -c%s "$f" 2>/dev/null || echo 0)
+            if [ "$s" -gt "$limit" ]; then echo "$f ($s bytes)"; fi
+          done)
+          if [ -n "$large" ]; then echo "Files exceed ${limit} bytes:"; echo "$large"; exit 1; fi

@@ -6,22 +6,13 @@ individual scripts before the shared-module extraction.
 
 import pytest
 
+from conftest import HUMAN_SIZE_CASES
+
 
 # --- human_size ---
 
 
-@pytest.mark.parametrize(
-    "size, expected",
-    [
-        (0, "0 B"),
-        (1023, "1023 B"),
-        (1024, "1.0 KB"),
-        (1536, "1.5 KB"),
-        (1024 * 1024, "1.0 MB"),
-        (int(1.5 * 1024 * 1024), "1.5 MB"),
-        (1024**3, "1.0 GB"),
-    ],
-)
+@pytest.mark.parametrize("size, expected", HUMAN_SIZE_CASES)
 def test_human_size(readlib_mod, size, expected):
     assert readlib_mod.human_size(size) == expected
 
