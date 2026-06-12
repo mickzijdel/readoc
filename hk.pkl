@@ -22,6 +22,17 @@ local linters = new Mapping<String, Step> {
         glob = sources
         check = "uv run pytest"
     }
+    // Shipped scripts must carry the executable bit IN THE GIT INDEX (mode 100755):
+    // with core.fileMode=false a local chmod +x never reaches git, so clones and
+    // plugin-cache installs get scripts that die with exit 126 "Permission denied".
+    // Detects scripts by shebang (line 1 only) among 100644-mode index entries.
+    // Single awk on purpose: hk's internal `sh` chokes on a while/read loop inside
+    // $() (kills the script at the assignment even when the substitution exits 0),
+    // so keep every intermediate command zero-exit. CI's lint job enforces the same
+    // rule (see ci.yml), so the gates can't drift.
+    ["exec-bit-scripts"] {
+        check = "bad=$(git ls-files -s | awk -F'\\t' '$1 ~ /^100644/ { if ((getline line < $2) > 0 && line ~ /^#!/) print $2; close($2) }'); if [ -n \"$bad\" ]; then echo 'Shebang scripts missing the executable bit in the git index. Fix: git update-index --chmod=+x <file>'; echo \"$bad\"; exit 1; fi"
+    }
     // --- Audits (dead-code + duplication) ---------------------------------------
     // These run on pre-commit too (not just `check`/CI): vulture is ~0.15s and jscpd
     // ~1s warm online (cooldown resolve + scan), so catching dead code / clones before
