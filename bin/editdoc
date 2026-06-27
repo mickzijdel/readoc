@@ -6,6 +6,7 @@
 #     "openpyxl",
 # ]
 # ///
+# short-description: Apply exact-match and structural edits to .docx and .xlsx files.
 """Apply exact-match and structural edits to .docx and .xlsx files.
 
 editdoc is to binary Office documents what Claude's built-in Edit tool is to

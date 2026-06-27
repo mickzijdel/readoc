@@ -7,6 +7,7 @@
 #     "pymupdf",
 # ]
 # ///
+# short-description: Explore, read, and search a folder of mixed documents.
 """Read entire folders of documents — explore, read, and search across mixed file types."""
 
 import sys

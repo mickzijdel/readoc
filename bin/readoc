@@ -7,6 +7,7 @@
 #     "pymupdf",
 # ]
 # ///
+# short-description: Read a .docx/.xlsx/.pdf document and print its content as plain text.
 """Read .docx, .xlsx, and .pdf files and output their content as plain text.
 
 When multiple files are given (or always, for clarity), each file's content is
