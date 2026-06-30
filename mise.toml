@@ -3,6 +3,8 @@ hk = "latest"
 pkl = "latest"
 uv = "latest"
 gitleaks = "latest"
+zizmor = "latest"         # GitHub Actions security static analysis (hk `zizmor` step + CI)
+actionlint = "latest"     # GitHub Actions workflow linter — syntax/expressions (hk `actionlint` step + CI)
 node = "latest"            # provides npx, used to run jscpd 5.x (`npx --yes jscpd@latest`)
 # jscpd (duplication) runs via npx — see hk.pkl / .jscpd.json. It is NOT a mise tool: jscpd 5.x
 # is a Rust binary distributed through npm optional platform packages, which npx resolves but the
@@ -22,4 +24,4 @@ minimum_release_age = "4d"
 [env]
 # dev-env standard version this repo targets (dev-hooks:dev-env-setup). Do not
 # hand-edit — bump it by running the skill's upgrade path.
-DEV_ENV_VERSION = "17"
+DEV_ENV_VERSION = "18"
