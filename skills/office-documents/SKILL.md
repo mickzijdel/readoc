@@ -125,8 +125,8 @@ echo '{"sheet": "Budget", "cell": "B2", "value": "1250"}' | editdoc book.xlsx
 # Batch: an array is applied all-or-nothing
 echo '[{"old_string":"a","new_string":"b"},{"sheet":"S","cell":"A1","value":1}]' | editdoc f.docx
 
-# Force editing an xlsx that has charts/macros/etc (see Limitations)
-echo '{"sheet":"Budget","cell":"B2","value":42}' | editdoc book.xlsx --force
+# Workbooks with charts, images, comments or macros need no special handling
+echo '{"sheet":"Budget","cell":"B2","value":42}' | editdoc book.xlsx
 ```
 
 ### docx edit types
@@ -152,7 +152,10 @@ echo '{"sheet":"Budget","cell":"B2","value":42}' | editdoc book.xlsx --force
   but codes that would be corrupted stay text — leading zeros (`"00501"`),
   underscores (`"1_000"`), scientific notation (`"1e3"`), and non-finite values
   (`"nan"`, `"inf"`). Pass a JSON number (`42`, `3.5`) to force numeric storage; a
-  JSON boolean stores a boolean; JSON `null` clears the cell.
+  JSON boolean stores a boolean; JSON `null` clears the cell (keeping its
+  formatting). Text is written as an **inline string** rather than through the
+  workbook's shared-string table, so an edit changes exactly one zip part and
+  cannot disturb another cell that happened to share the same string.
 
 ### Why a naive find/replace fails on Word (and how editdoc handles it)
 
@@ -192,12 +195,24 @@ confirm.
   not rewritten in place.
 - **Nested tables:** only top-level table cells are reached; text inside a table
   nested within a cell is not found.
-- **xlsx fidelity:** openpyxl rewrites the whole workbook on save and can drop
-  features it doesn't model. `editdoc` **scans the workbook and refuses** when it
-  detects charts, pivot tables, drawings/images, or macros, naming what would be
-  lost — pass `--force` (or `--allow-lossy`) to edit anyway and accept the loss.
-  Plain data workbooks edit with no flag. (Detection is by file contents, so it
-  can't see every lossy feature; `--force` skips the check entirely.)
+- **xlsx surgical editing:** an `.xlsx` is patched as the zip it is — only the
+  worksheet part the edit touches is rewritten, and every other entry is copied
+  through byte-for-byte in its original order and compression. Charts, pivot
+  tables, images, cell comments and their VML anchors, threaded comments, macros,
+  in-cell rich text, and SharePoint's `customXml`/`[trash]` parts therefore all
+  survive an edit intact — there is no lossy mode and no flag to pass.
+  `--force` / `--allow-lossy` are still accepted but ignored.
+  What `editdoc` **refuses** instead of guessing, each with a specific error:
+  a cell holding a **formula** (overwriting it would strand the workbook's
+  calculation chain — edit the formula's inputs instead); a cell inside a
+  **merged range** that isn't the range's anchor; text containing control
+  characters or an `_xHHHH_` sequence (Excel would decode it back to a
+  character); and a worksheet whose rows or cells carry no `r=` position or sit
+  out of order. When a workbook has formulas, editdoc sets `fullCalcOnLoad` so
+  Excel recomputes cached results the edit invalidated.
+- **docx orphan parts:** a `.docx` is edited through python-docx, which walks the
+  package's relationship graph — parts reachable from it (including `customXml`)
+  survive, but a part in the zip that nothing references is dropped.
 - **No `.pdf` editing** (no clean text reflow).
 
 ## Requirements
@@ -205,4 +220,5 @@ confirm.
 Each CLI declares its Python dependencies inline via PEP 723 and runs through
 `uv run --script`, so uv installs them into a cached environment automatically on
 first use: `readoc`/`readir` use `python-docx`, `openpyxl`, and `pymupdf` (for
-`.docx`, `.xlsx`, and `.pdf`); `editdoc` uses `python-docx` and `openpyxl`.
+`.docx`, `.xlsx`, and `.pdf`); `editdoc` uses only `python-docx` (spreadsheets
+are patched with the standard library's `zipfile`).

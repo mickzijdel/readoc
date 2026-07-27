@@ -46,10 +46,13 @@ echo '{"sheet": "Budget", "cell": "B2", "value": "1250"}' | editdoc book.xlsx
 ```
 
 For spreadsheets, a string `value` becomes a number only when it round-trips
-exactly (`"1250"`→`1250`), so codes like `"00501"` stay text. `editdoc` refuses
-to edit an `.xlsx` that contains charts, pivot tables, images, or macros (which
-openpyxl would drop on save), naming what would be lost; pass `--force` to edit
-anyway.
+exactly (`"1250"`→`1250`), so codes like `"00501"` stay text. `editdoc` edits an
+`.xlsx` by **patching the zip in place** — it rewrites only the worksheet part
+the edit touches and copies every other entry through byte-for-byte, so charts,
+pivot tables, images, cell comments, macros and any SharePoint `customXml`
+metadata all survive untouched. Overwriting a cell that holds a **formula** is
+refused (it would strand the workbook's calculation chain); edit the formula's
+inputs instead.
 
 Word text lives in formatting *runs*, so a visible sentence is often split across
 several XML fragments — `editdoc` matches against each paragraph's reconstructed
@@ -77,7 +80,7 @@ above `--max-size` (default 500 KB) instead of truncating them.
 ## Requirements
 
 [`uv`](https://docs.astral.sh/uv/) on your `PATH`, that's the only prerequisite.
-Both CLIs declare their Python dependencies (`python-docx`, `openpyxl`, `pymupdf`)
+The CLIs declare their Python dependencies (`python-docx`, `openpyxl`, `pymupdf`)
 inline via [PEP 723](https://peps.python.org/pep-0723/) and run through
 `uv run --script`, so uv installs them into a cached environment automatically on
 first use. No manual `pip install` and no venv to manage.
