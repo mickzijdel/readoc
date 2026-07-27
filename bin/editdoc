@@ -5,8 +5,8 @@
 #     "python-docx",
 # ]
 # ///
-# short-description: Apply exact-match and structural edits to .docx and .xlsx files.
-"""Apply exact-match and structural edits to .docx and .xlsx files.
+# short-description: Apply exact-match and structural edits to .docx, .xlsx and .xlsm files.
+"""Apply exact-match and structural edits to .docx, .xlsx and .xlsm files.
 
 editdoc is to binary Office documents what Claude's built-in Edit tool is to
 text files: it replaces *exact* strings, fails loudly when a match is missing or
@@ -44,7 +44,7 @@ from _xlsxzip import (  # noqa: E402
     set_cell,
 )
 
-SUPPORTED = {".docx", ".xlsx"}
+SUPPORTED = {".docx", ".xlsx", ".xlsm"}
 
 
 class EditError(Exception):
@@ -52,7 +52,7 @@ class EditError(Exception):
 
 
 USAGE = (
-    "Usage: editdoc <file.docx|file.xlsx>  < spec.json\n"
+    "Usage: editdoc <file.docx|file.xlsx|file.xlsm>  < spec.json\n"
     "\n"
     "Reads a JSON edit spec (one object or an array of objects) from stdin and\n"
     "applies it to the file. Edit types are dispatched by their keys:\n"
@@ -576,7 +576,7 @@ def main(argv=None):
     if ext not in SUPPORTED:
         fail(
             f"Error: Unsupported file type '{ext}' for {filepath}\n"
-            "Supported: .docx, .xlsx"
+            "Supported: .docx, .xlsx, .xlsm"
         )
 
     raw = sys.stdin.read()

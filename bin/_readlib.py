@@ -195,7 +195,8 @@ def read_text_file(path):
 # --- Supported extensions ---
 
 READABLE_TEXT = {".md", ".txt", ".csv", ".json", ".yaml", ".yml"}
-READABLE_SPECIAL = {".docx", ".xlsx", ".pdf"}
+SPREADSHEET_EXTS = {".xlsx", ".xlsm"}  # .xlsm is an .xlsx that also carries macros
+READABLE_SPECIAL = {".docx", ".pdf"} | SPREADSHEET_EXTS
 READABLE_ALL = READABLE_TEXT | READABLE_SPECIAL
 
 
@@ -207,7 +208,7 @@ def read_file_content(path, include_comments=True):
             return read_text_file(path)
         elif ext == ".docx":
             return read_docx_text(path, include_comments)
-        elif ext == ".xlsx":
+        elif ext in SPREADSHEET_EXTS:
             return read_xlsx_text(path, include_comments)
         elif ext == ".pdf":
             return read_pdf_text(path, include_comments)
@@ -434,7 +435,7 @@ def search_xlsx(label, path, query, n_rows, include_comments=True):
 
 def search_file(label, path, ext, query, mode, n, n_rows, include_comments=True):
     """Dispatch a search over one file; print results, return match count."""
-    if ext == ".xlsx":
+    if ext in SPREADSHEET_EXTS:
         return search_xlsx(label, path, query, n_rows, include_comments)
     content = read_file_content(path, include_comments)
     if content is None:

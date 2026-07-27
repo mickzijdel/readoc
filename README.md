@@ -5,12 +5,12 @@ mixed documents as plain text — without truncation.
 
 ## Tools
 
-- **`readoc`** — read one or more `.docx` / `.xlsx` / `.pdf` files, or
+- **`readoc`** — read one or more `.docx` / `.xlsx` / `.xlsm` / `.pdf` files, or
   `readoc search <file> <query>` to grep inside one. Each file gets a header box
   (`path (Type, size)`); headings, tables, and sheets are preserved.
 - **`readir`** — explore (`tree`), concatenate (`read`), or grep (`search`) an
-  entire folder of mixed documents (`.md .txt .csv .docx .xlsx .pdf .json .yaml .yml`).
-- **`editdoc`** — apply exact-match and structural edits to `.docx` / `.xlsx`
+  entire folder of mixed documents (`.md .txt .csv .docx .xlsx .xlsm .pdf .json .yaml .yml`).
+- **`editdoc`** — apply exact-match and structural edits to `.docx` / `.xlsx` / `.xlsm`
   files: what the built-in Edit tool is to text files, for binary Office docs.
 
 All three are exposed as the `office-documents` skill (`readoc:office-documents`)
@@ -21,7 +21,7 @@ and are symlinked onto `PATH` for direct CLI use.
 `readir search` and `readoc search` go beyond a line-oriented `grep`. For prose
 (`.docx`/`.pdf`/`.md`/…) pick one context unit — `--context` (lines, the
 default), `--context-paragraphs` (whole paragraphs), or `--context-chars` (a
-character window, with the match wrapped in `»…«`). Spreadsheets (`.xlsx`) are
+character window, with the match wrapped in `»…«`). Spreadsheets (`.xlsx`/`.xlsm`) are
 searched **cell by cell**: each hit shows `Sheet!Cell` plus its column/row headers
 and a window of surrounding rows (`--context-rows`). Comments are searched by
 default (`--no-comments` to skip). Plain piping still works for line-oriented work

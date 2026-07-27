@@ -22,6 +22,7 @@ from openpyxl import Workbook, load_workbook
 # file uploaded through the Graph API (stored uncompressed, as the real one is).
 CUSTOM_XML = b'<?xml version="1.0"?><properties xmlns="http://example.invalid/ct"/>'
 TRASH_PART = b"\x00" * 64
+VBA_PROJECT = b"\xd0\xcf\x11\xe0macro-project-stand-in"
 
 
 # --- Fixture builders specific to editing tests ---
@@ -246,6 +247,16 @@ def make_excel_shaped_xlsx(path, formula=False):
                 )
             zout.writestr(name, text)
     return path
+
+
+def make_xlsm(path, sheet="Budget"):
+    """A macro-enabled workbook: an .xlsx package carrying xl/vbaProject.bin.
+
+    Zip surgery leaves the macro blob alone, which is what makes .xlsm editable
+    at all — openpyxl's rewrite dropped it unless explicitly asked not to.
+    """
+    make_xlsx(path, sheet=sheet)
+    return add_zip_parts(path, [("xl/vbaProject.bin", VBA_PROJECT, zipfile.ZIP_STORED)])
 
 
 def cell_value(path, sheet, coord):
@@ -1028,6 +1039,33 @@ def test_xlsx_deprecated_force_flag_is_accepted_with_a_notice(editdoc, tmp_path)
     assert code == 0, err
     assert "deprecated" in err.lower()
     assert cell_value(f, "Budget", "A2") == "Q1x"
+
+
+# --- .xlsm: macro-enabled workbooks, editable now that nothing is rewritten ---
+
+
+def test_xlsm_cell_edit_applies_and_keeps_the_macro_project(editdoc, tmp_path):
+    f = make_xlsm(tmp_path / "x.xlsm")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": 1250})
+    assert code == 0, err
+    assert cell_value(f, "Budget", "B2") == 1250
+    with zipfile.ZipFile(f) as z:
+        assert z.read("xl/vbaProject.bin") == VBA_PROJECT
+
+
+def test_xlsm_is_not_rejected_as_an_unsupported_type(editdoc, tmp_path):
+    f = make_xlsm(tmp_path / "x.xlsm")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
+    assert code == 0, err
+    assert "Unsupported" not in err
+
+
+def test_unsupported_extension_still_rejected(editdoc, tmp_path):
+    f = tmp_path / "notes.rtf"
+    f.write_text("hello")
+    out, err, code = editdoc(f, {"old_string": "hello", "new_string": "hi"})
+    assert code == 1
+    assert "Unsupported file type" in err
 
 
 def test_docx_edit_preserves_customxml_parts(editdoc, tmp_path):

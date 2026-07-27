@@ -293,6 +293,13 @@ def xlsx_file(tmp_path):
 
 
 @pytest.fixture
+def xlsm_file(tmp_path):
+    # A macro-enabled workbook is the same package under a different extension;
+    # the readers only need to recognise the suffix.
+    return make_xlsx(tmp_path / "sheet.xlsm")
+
+
+@pytest.fixture
 def pdf_file(tmp_path):
     return make_pdf(tmp_path / "single.pdf")
 

@@ -14,7 +14,12 @@ def test_human_size(readoc_mod, size, expected):
 
 
 def test_type_labels(readoc_mod):
-    assert readoc_mod.TYPE_LABELS == {".docx": "Word", ".xlsx": "Excel", ".pdf": "PDF"}
+    assert readoc_mod.TYPE_LABELS == {
+        ".docx": "Word",
+        ".xlsx": "Excel",
+        ".xlsm": "Excel",
+        ".pdf": "PDF",
+    }
 
 
 def test_print_header_known_label(readoc_mod, capsys):
@@ -63,6 +68,12 @@ def test_xlsx_sheets_and_no_truncation(readoc, xlsx_file):
     assert "=== Sheet: Blank ===" in out
     # The long cell must appear in full — no truncation despite the 40-char cap.
     assert LONG_CELL in out
+
+
+def test_xlsm_is_read_like_an_xlsx(readoc, xlsm_file):
+    out, err, code = readoc(xlsm_file)
+    assert code == 0, err
+    assert "Excel" in out
 
 
 def test_xlsx_empty_sheet_marker(readoc, xlsx_file):

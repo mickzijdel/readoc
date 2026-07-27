@@ -1,6 +1,6 @@
 ---
 name: office-documents
-description: Use when you need to read OR edit the contents of Office documents (.docx, .xlsx, .pdf) or explore/search a folder of mixed documents. Provides the readoc, readir, and editdoc CLIs. Reach for this whenever a task involves reading or modifying a Word doc, Excel sheet, PDF, or a directory of such files.
+description: Use when you need to read OR edit the contents of Office documents (.docx, .xlsx, .xlsm, .pdf) or explore/search a folder of mixed documents. Provides the readoc, readir, and editdoc CLIs. Reach for this whenever a task involves reading or modifying a Word doc, Excel sheet, PDF, or a directory of such files.
 ---
 
 # Reading & Editing Documents
@@ -10,7 +10,7 @@ symlinked onto `PATH` as `readoc`, `readir`, and `editdoc`, so you can usually
 call them by bare name.
 
 The standard `Read`/`Edit`/`Write` tools cannot parse or modify
-`.docx`/`.xlsx`/`.pdf`. Use these instead. **The readers never truncate
+`.docx`/`.xlsx`/`.xlsm`/`.pdf`. Use these instead. **The readers never truncate
 content** — spreadsheet cells, pages, and tables are emitted in full.
 
 ## `readoc` — read specific files
@@ -81,7 +81,7 @@ plain `grep` cannot:
     (units marked `¶`); respects real paragraph boundaries.
   - `--context-chars N` — a ±N character window around each match, merging
     overlapping windows. The matched term is wrapped in `»…«`.
-- **Spreadsheets** (`.xlsx`) — always searched **cell by cell**. Each hit reports
+- **Spreadsheets** (`.xlsx`, `.xlsm`) — always searched **cell by cell**. Each hit reports
   `Sheet!Cell` plus its column header (row 1) and row header (column A), e.g.
   `Budget!C7  [col "Amount" / row "Q3"]  <value>`, followed by a window of the
   matching rows ± `--context-rows` (default 2). Cell comments are searched too.
@@ -94,7 +94,7 @@ Comments are extracted by default for `readir read` (and are searchable by both
 search commands), in the same `--- Comments ---` form as `readoc`. Use
 `--no-comments` to opt out.
 
-Supported formats: `.md .txt .csv .docx .xlsx .pdf .json .yaml .yml`.
+Supported formats: `.md .txt .csv .docx .xlsx .xlsm .pdf .json .yaml .yml`.
 
 ### The one deliberate limit
 `readir read` defaults to skipping files larger than **500 KB** to avoid dumping
@@ -102,7 +102,7 @@ huge files unintentionally. Skipped files are **listed** in the skip report
 (never silently dropped, never truncated). Raise the ceiling with
 `--max-size <KB>` when you genuinely need a large file.
 
-## `editdoc` — edit .docx / .xlsx files
+## `editdoc` — edit .docx / .xlsx / .xlsm files
 
 `editdoc` is to binary Office documents what the built-in `Edit` tool is to text
 files. It takes the target file as an argv and reads a JSON **edit spec from
@@ -195,7 +195,8 @@ confirm.
   not rewritten in place.
 - **Nested tables:** only top-level table cells are reached; text inside a table
   nested within a cell is not found.
-- **xlsx surgical editing:** an `.xlsx` is patched as the zip it is — only the
+- **xlsx surgical editing:** an `.xlsx` (or macro-enabled `.xlsm`) is patched as
+  the zip it is — only the
   worksheet part the edit touches is rewritten, and every other entry is copied
   through byte-for-byte in its original order and compression. Charts, pivot
   tables, images, cell comments and their VML anchors, threaded comments, macros,

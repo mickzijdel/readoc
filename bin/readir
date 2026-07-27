@@ -215,11 +215,11 @@ Examples:
   readir search ./docs "venue" --filter docx   Only search Word files
 
 Context modes (--context / --context-paragraphs / --context-chars) are mutually
-exclusive and apply to prose (.docx/.pdf/.md/...). Spreadsheets (.xlsx) are always
+exclusive and apply to prose (.docx/.pdf/.md/...). Spreadsheets (.xlsx/.xlsm) are always
 searched cell-by-cell — each hit shows Sheet!Cell plus its column/row headers, and
 --context-rows controls how many surrounding rows are shown.
 
-Supported formats: .md .txt .csv .docx .xlsx .pdf .json .yaml .yml
+Supported formats: .md .txt .csv .docx .xlsx .xlsm .pdf .json .yaml .yml
 """
 
 
@@ -228,7 +228,7 @@ def main():
         prog="readir",
         description="Read entire folders of documents",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Supported formats: .md .txt .csv .docx .xlsx .pdf .json .yaml .yml",
+        epilog="Supported formats: .md .txt .csv .docx .xlsx .xlsm .pdf .json .yaml .yml",
     )
     subparsers = parser.add_subparsers(dest="command")
 

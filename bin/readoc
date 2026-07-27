@@ -7,8 +7,8 @@
 #     "pymupdf",
 # ]
 # ///
-# short-description: Read a .docx/.xlsx/.pdf document and print its content as plain text.
-"""Read .docx, .xlsx, and .pdf files and output their content as plain text.
+# short-description: Read a .docx/.xlsx/.xlsm/.pdf document and print its content as plain text.
+"""Read .docx, .xlsx, .xlsm, and .pdf files and output their content as plain text.
 
 When multiple files are given (or always, for clarity), each file's content is
 prefixed with an unambiguous header box showing its path, type, and size — the
@@ -34,7 +34,7 @@ from _readlib import (  # noqa: E402
     search_file,
 )
 
-TYPE_LABELS = {".docx": "Word", ".xlsx": "Excel", ".pdf": "PDF"}
+TYPE_LABELS = {".docx": "Word", ".xlsx": "Excel", ".xlsm": "Excel", ".pdf": "PDF"}
 
 
 def print_header(path, ext, size):
@@ -144,7 +144,7 @@ def read_xlsx(path, include_comments=True):
         print_comments(xlsx_comments(path))
 
 
-READERS = {".docx": read_docx, ".xlsx": read_xlsx, ".pdf": read_pdf}
+READERS = {".docx": read_docx, ".xlsx": read_xlsx, ".xlsm": read_xlsx, ".pdf": read_pdf}
 
 
 def cmd_search(argv):
@@ -235,12 +235,12 @@ def main():
 
     if not files:
         print(
-            "Usage: readoc [--no-comments] <file.docx|file.xlsx|file.pdf> [file2 ...]"
+            "Usage: readoc [--no-comments] <file.docx|file.xlsx|file.xlsm|file.pdf> [file2 ...]"
         )
         print("       readoc search <file> <query> [--context-paragraphs N |")
         print("                                      --context-chars N | --context N]")
         print(
-            "\nReads .docx, .xlsx, and .pdf files and outputs their content as plain text."
+            "\nReads .docx, .xlsx, .xlsm, and .pdf files and outputs their content as plain text."
         )
         print("Each file is preceded by a header box (path, type, size).")
         print(
@@ -262,7 +262,7 @@ def main():
             print(
                 f"Error: Unsupported file type '{ext}' for {filepath}", file=sys.stderr
             )
-            print("Supported: .docx, .xlsx, .pdf", file=sys.stderr)
+            print("Supported: .docx, .xlsx, .xlsm, .pdf", file=sys.stderr)
             exit_code = 1
             continue
 
