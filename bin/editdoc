@@ -3,7 +3,6 @@
 # requires-python = ">=3.9"
 # dependencies = [
 #     "python-docx",
-#     "openpyxl",
 # ]
 # ///
 # short-description: Apply exact-match and structural edits to .docx and .xlsx files.
@@ -22,6 +21,10 @@ objects, dispatched by which keys each carries:
 All edits are validated before any are applied, and the file is saved
 crash-safely (temp file + atomic replace), so a failure leaves the original
 byte-for-byte intact.
+
+Spreadsheets are edited by patching the zip in place (see _xlsxzip), never by
+rewriting the package: charts, pivot tables, images, cell comments, macros and
+SharePoint's own customXml parts all survive an edit byte-for-byte.
 """
 
 import copy
@@ -30,8 +33,16 @@ import math
 import os
 import sys
 import tempfile
-import zipfile
 
+# The xlsx surgery lives in a sibling module. realpath() resolves the PATH /
+# skills symlink so the import works however editdoc was invoked.
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+from _xlsxzip import (  # noqa: E402
+    XlsxError,
+    XlsxPackage,
+    force_full_recalc,
+    set_cell,
+)
 
 SUPPORTED = {".docx", ".xlsx"}
 
@@ -41,17 +52,16 @@ class EditError(Exception):
 
 
 USAGE = (
-    "Usage: editdoc [--force] <file.docx|file.xlsx>  < spec.json\n"
+    "Usage: editdoc <file.docx|file.xlsx>  < spec.json\n"
     "\n"
     "Reads a JSON edit spec (one object or an array of objects) from stdin and\n"
     "applies it to the file. Edit types are dispatched by their keys:\n"
     '  docx text replace : {"old_string": "...", "new_string": "...", "replace_all": false}\n'
     '  docx paragraph op : {"start_contains": "...", "end_contains": "...", "new_text": "..."}\n'
     '  xlsx cell edit    : {"sheet": "...", "cell": "B2", "value": "..."}\n'
-    "\n"
-    "--force (alias --allow-lossy): edit an .xlsx with charts/macros/pivots/images\n"
-    "anyway (those features are dropped on save).\n"
 )
+
+DEPRECATED_FLAGS = {"--force", "--allow-lossy"}
 
 
 def fail(message):
@@ -487,81 +497,45 @@ def coerce_value(value):
     return value
 
 
-def apply_one_xlsx_edit(wb, edit, index):
-    from openpyxl.utils.cell import coordinate_from_string
-
+def apply_one_xlsx_edit(pkg, edit, index):
     sheet = edit.get("sheet")
     cell = edit.get("cell")
     if sheet is None or cell is None or "value" not in edit:
         raise EditError(f"edit {index + 1}: an xlsx edit needs sheet, cell, and value.")
-    if sheet not in wb.sheetnames:
-        available = ", ".join(wb.sheetnames)
-        raise EditError(
-            f"edit {index + 1}: sheet not found: {sheet!r} (available: {available})."
-        )
-    try:
-        coordinate_from_string(cell)
-    except Exception:
-        raise EditError(
-            f"edit {index + 1}: invalid cell coordinate: {cell!r} "
-            "(expected a reference like B2)."
-        )
     value = coerce_value(edit["value"])
-    wb[sheet][cell] = value
+    try:
+        part = pkg.sheet_part(sheet)
+        pkg.stage(part, set_cell(pkg.read(part), cell, value))
+    except XlsxError as e:
+        raise EditError(f"edit {index + 1}: {e}")
     return [f"✓ edit {index + 1}: set {sheet}!{cell} = {value}"]
 
 
-def detect_lossy_features(path):
-    """Return a sorted list of workbook features openpyxl drops on save (charts,
-    pivot tables, drawings/images, macros), detected by scanning the .xlsx zip.
-    Empty list means a plain data workbook that round-trips safely."""
-    found = set()
+def apply_xlsx_edits(path, edits):
     try:
-        with zipfile.ZipFile(path) as z:
-            names = z.namelist()
-    except Exception:
-        return []
-    for n in names:
-        if n.startswith("xl/charts/"):
-            found.add("charts")
-        elif n.startswith("xl/pivotTables/"):
-            found.add("pivot tables")
-        elif n.startswith("xl/drawings/"):
-            found.add("drawings/images")
-        elif n.endswith("vbaProject.bin"):
-            found.add("macros")
-    return sorted(found)
-
-
-def apply_xlsx_edits(path, edits, force=False):
-    from openpyxl import load_workbook
-
-    if not force:
-        lossy = detect_lossy_features(path)
-        if lossy:
-            raise EditError(
-                f"this workbook contains {', '.join(lossy)}, which openpyxl drops "
-                "when it rewrites the file — editing it here would lose them. "
-                "Re-run with --force to edit anyway (accepting that loss)."
-            )
+        pkg = XlsxPackage(path)
+    except XlsxError as e:
+        raise EditError(f"could not open {path} as a spreadsheet ({e}).")
     try:
-        wb = load_workbook(path)
-    except Exception as e:
-        raise EditError(f"could not open {path} as an .xlsx file ({e}).")
-    outputs = []
-    for i, edit in enumerate(edits):
-        if not isinstance(edit, dict) or "sheet" not in edit:
-            raise EditError(
-                f"edit {i + 1}: unrecognized xlsx edit — expected sheet/cell/value."
-            )
-        outputs.extend(apply_one_xlsx_edit(wb, edit, i))
-    # Reached only if every edit validated; save once, atomically.
-    save_atomic(wb.save, path)
+        outputs = []
+        for i, edit in enumerate(edits):
+            if not isinstance(edit, dict) or "sheet" not in edit:
+                raise EditError(
+                    f"edit {i + 1}: unrecognized xlsx edit — expected sheet/cell/value."
+                )
+            outputs.extend(apply_one_xlsx_edit(pkg, edit, i))
+        # Every formula cell caches its last computed <v>. Patching an input
+        # leaves those stale, so ask Excel to recalculate on open — openpyxl's
+        # rewrite always did, and dropping it would show wrong numbers.
+        if pkg.has_formulas():
+            workbook = pkg.workbook_part
+            pkg.stage(workbook, force_full_recalc(pkg.read(workbook)))
+        # Reached only if every edit validated; write once, atomically.
+        save_atomic(pkg.save, path)
+    finally:
+        pkg.close()
     if outputs:
         print("\n".join(outputs))
-
-
-ALLOWED_FLAGS = {"--force", "--allow-lossy"}
 
 
 def main(argv=None):
@@ -569,13 +543,20 @@ def main(argv=None):
     flags = [a for a in argv if a.startswith("-")]
     files = [a for a in argv if not a.startswith("-")]
 
-    unknown = [f for f in flags if f not in ALLOWED_FLAGS]
+    unknown = [f for f in flags if f not in DEPRECATED_FLAGS]
     if unknown:
         fail(
             f"Error: unknown flag(s): {', '.join(unknown)}\n"
-            f"Supported flags: {', '.join(sorted(ALLOWED_FLAGS))}"
+            f"Supported flags: {', '.join(sorted(DEPRECATED_FLAGS))}"
         )
-    force = bool(flags)  # any allowed flag present means --force/--allow-lossy
+    if flags:
+        # Still accepted so older callers keep working, but there is nothing
+        # left to force: editdoc no longer rewrites the workbook.
+        print(
+            f"note: {', '.join(sorted(set(flags)))} is deprecated and ignored — "
+            "editdoc now patches spreadsheets in place and drops nothing.",
+            file=sys.stderr,
+        )
 
     if not files:
         print(USAGE)
@@ -612,7 +593,7 @@ def main(argv=None):
         if ext == ".docx":
             apply_docx_edits(filepath, edits)
         else:
-            apply_xlsx_edits(filepath, edits, force=force)
+            apply_xlsx_edits(filepath, edits)
     except EditError as e:
         fail(str(e))
 

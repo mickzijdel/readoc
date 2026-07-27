@@ -17,6 +17,7 @@ dev = [
     "pymupdf",
     "ruff",
     "vulture",
+    "pillow>=11.3.0",
 ]
 
 [tool.uv]

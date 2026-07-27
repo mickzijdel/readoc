@@ -40,14 +40,18 @@ HUMAN_SIZE_CASES = [
 # --- Loading the scripts as modules (for unit tests) ---
 
 
-def load_script(name):
-    """Load bin/<name> as a module despite its lack of a .py extension."""
-    path = BIN / name
+def load_module(name, path):
+    """Import a file as ``name`` regardless of its extension (or lack of one)."""
     loader = SourceFileLoader(name, str(path))
     spec = importlib.util.spec_from_loader(name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     return module
+
+
+def load_script(name):
+    """Load bin/<name> as a module despite its lack of a .py extension."""
+    return load_module(name, BIN / name)
 
 
 @pytest.fixture(scope="session")
@@ -62,14 +66,13 @@ def readir_mod():
 
 @pytest.fixture(scope="session")
 def readlib_mod():
-    # The shared module carries a .py extension (it is imported, not run), so it
-    # needs a slightly different load than the extension-less CLI scripts.
-    path = BIN / "_readlib.py"
-    loader = SourceFileLoader("_readlib", str(path))
-    spec = importlib.util.spec_from_loader("_readlib", loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
+    # The shared modules carry a .py extension (they are imported, not run).
+    return load_module("_readlib", BIN / "_readlib.py")
+
+
+@pytest.fixture(scope="session")
+def xlsxzip_mod():
+    return load_module("_xlsxzip", BIN / "_xlsxzip.py")
 
 
 # --- Driving the CLIs end-to-end (for integration tests) ---

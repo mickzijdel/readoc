@@ -6,12 +6,22 @@ the fly with python-docx / openpyxl; results are verified by re-opening the file
 """
 
 import hashlib
+import shutil
+import subprocess
+import zipfile
 
 import docx
+import pytest
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from openpyxl import Workbook, load_workbook
+
+# Stand-ins for the SharePoint parts that openpyxl used to drop: the library's
+# content-type schema, and the scratch blob SharePoint appends to every OOXML
+# file uploaded through the Graph API (stored uncompressed, as the real one is).
+CUSTOM_XML = b'<?xml version="1.0"?><properties xmlns="http://example.invalid/ct"/>'
+TRASH_PART = b"\x00" * 64
 
 
 # --- Fixture builders specific to editing tests ---
@@ -93,6 +103,148 @@ def make_xlsx_with_chart(path, sheet="Budget"):
     )
     ws.add_chart(chart, "E5")
     wb.save(str(path))
+    return path
+
+
+def zip_names(path):
+    with zipfile.ZipFile(str(path)) as z:
+        return z.namelist()
+
+
+def add_zip_parts(path, parts):
+    """Rewrite a package with extra zip entries appended verbatim.
+
+    ``parts`` is a list of (name, bytes, compress_type). Used to bolt on the
+    SharePoint-side parts that no Python writer produces, so the tests can prove
+    an edit carries them through untouched.
+    """
+    with zipfile.ZipFile(str(path)) as zin:
+        entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    with zipfile.ZipFile(str(path), "w", zipfile.ZIP_DEFLATED) as zout:
+        for info, data in entries:
+            zout.writestr(info, data)
+        for name, data, compress in parts:
+            zout.writestr(zipfile.ZipInfo(name), data, compress_type=compress)
+    return path
+
+
+def make_rich_xlsx(path, sheet="Budget"):
+    """A workbook carrying everything the old openpyxl round-trip destroyed.
+
+    A chart, an image, a cell comment (which is what puts a VML drawing under
+    xl/drawings/ and used to trigger the blanket refusal), a formula, a merged
+    range, plus SharePoint's customXml and [trash] parts.
+    """
+    from openpyxl.chart import BarChart, Reference
+    from openpyxl.comments import Comment
+    from openpyxl.drawing.image import Image
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = sheet
+    ws.append(["Quarter", "Amount"])
+    ws.append(["Q1", 1000])
+    ws.append(["Q2", 1500])
+    ws["B4"] = "=SUM(B2:B3)"
+    ws["A1"].comment = Comment("check this figure", "Reviewer")
+    ws.merge_cells("D1:E1")
+    chart = BarChart()
+    chart.add_data(
+        Reference(ws, min_col=2, min_row=1, max_row=3), titles_from_data=True
+    )
+    ws.add_chart(chart, "G5")
+    png = path.parent / "dot.png"
+    # A 1x1 PNG, written by hand so the suite needs no image library.
+    png.write_bytes(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    ws.add_image(Image(str(png)), "G20")
+    wb.save(str(path))
+    return add_zip_parts(
+        path,
+        [
+            ("customXml/item1.xml", CUSTOM_XML, zipfile.ZIP_DEFLATED),
+            ("[trash]/0000.dat", TRASH_PART, zipfile.ZIP_STORED),
+        ],
+    )
+
+
+# Hand-written because openpyxl never emits this shape: it writes inline strings
+# and no sharedStrings part at all, so the t="s" path that real Excel and
+# SharePoint files use would otherwise go completely untested.
+EXCEL_SHAPED_PARTS = {
+    "[Content_Types].xml": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+        "</Types>"
+    ),
+    "_rels/.rels": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    ),
+    "xl/workbook.xml": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>'
+        '<calcPr calcId="191029"/></workbook>'
+    ),
+    "xl/_rels/workbook.xml.rels": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        # A relative target, as Excel writes them (openpyxl writes absolute ones).
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>'
+        "</Relationships>"
+    ),
+    # One <si>, referenced from two cells — the deduplication trap.
+    "xl/sharedStrings.xml": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'count="2" uniqueCount="1"><si><t>shared</t></si></sst>'
+    ),
+    "xl/worksheets/sheet1.xml": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+        'mc:Ignorable="x14ac" '
+        'xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">'
+        '<dimension ref="A1:C5"/><sheetData>'
+        '<row r="1" spans="1:3" ht="30" customHeight="1" x14ac:dyDescent="0.25">'
+        '<c r="A1" t="s"><v>0</v></c><c r="C1"/></row>'
+        '<row r="2" spans="1:3"><c r="B2" t="s"><v>0</v></c></row>'
+        '<row r="5" spans="1:3"><c r="A5"><v>99</v></c></row>'
+        "</sheetData>"
+        '<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>'
+        "</worksheet>"
+    ),
+}
+
+
+def make_excel_shaped_xlsx(path, formula=False):
+    """Write the Excel-shaped package; ``formula`` adds a cached formula cell.
+
+    Its <calcPr> deliberately carries no fullCalcOnLoad, so the formula variant
+    exercises editdoc adding the flag (openpyxl's own writer always sets it, so
+    an openpyxl-built fixture cannot reach that path).
+    """
+    with zipfile.ZipFile(str(path), "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, text in EXCEL_SHAPED_PARTS.items():
+            if formula and name == "xl/worksheets/sheet1.xml":
+                text = text.replace(
+                    '<row r="5"',
+                    '<row r="3"><c r="A3"><f>A5*2</f><v>198</v></c></row><row r="5"',
+                )
+            zout.writestr(name, text)
     return path
 
 
@@ -645,30 +797,272 @@ def test_xlsx_bool_stored(editdoc, tmp_path):
     assert cell_value(f, "Budget", "A5") is True
 
 
-def test_xlsx_chart_workbook_refused_without_force(editdoc, tmp_path):
-    f = make_xlsx_with_chart(tmp_path / "x.xlsx")
-    before = sha256(f)
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
-    assert code == 1
-    assert "chart" in err.lower()
-    assert "--force" in err or "force" in err.lower()
-    assert sha256(f) == before  # not rewritten, chart preserved
-
-
-def test_xlsx_chart_workbook_editable_with_force(editdoc, tmp_path):
-    f = make_xlsx_with_chart(tmp_path / "x.xlsx")
-    out, err, code = editdoc(
-        f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"}, "--force"
-    )
-    assert code == 0, err
-    assert cell_value(f, "Budget", "A2") == "Q1x"
-
-
 def test_xlsx_plain_workbook_not_refused(editdoc, tmp_path):
     # A chart-free data sheet edits with no friction and no flag.
     f = make_xlsx(tmp_path / "x.xlsx")
     out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
     assert code == 0, err
+
+
+# --- Package preservation: an edit must not cost the workbook any zip part ---
+#
+# The reason this whole path exists. openpyxl's save() regenerates the package
+# and silently drops everything it does not model — on a real SharePoint file
+# that meant 21 zip entries down to 11, taking the library's customXml metadata
+# with it. These edit the richest workbook we can build and check nothing left.
+
+
+def test_xlsx_comment_workbook_edits_without_any_flag(editdoc, tmp_path):
+    # The headline regression: Excel anchors cell comments with a VML drawing
+    # under xl/drawings/, which the old lossy-feature scan matched by prefix —
+    # so *every* workbook with a comment was refused, and --force then deleted
+    # the comments it was warning about.
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    names = zip_names(f)
+    assert any(n.startswith("xl/drawings/") and n.endswith(".vml") for n in names)
+    assert any(n.startswith("xl/comments") for n in names)
+
+
+def test_xlsx_edit_preserves_every_zip_entry_in_order(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    before = zip_names(f)
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    assert zip_names(f) == before  # list *and* order
+
+
+def test_xlsx_edit_preserves_customxml_and_orphan_parts(editdoc, tmp_path):
+    # The incident's literal symptom: SharePoint's content-type schema and its
+    # own [trash] scratch blob, neither of which openpyxl knows how to keep.
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        assert z.read("customXml/item1.xml") == CUSTOM_XML
+        assert z.read("[trash]/0000.dat") == TRASH_PART
+        assert z.getinfo("[trash]/0000.dat").compress_type == zipfile.ZIP_STORED
+
+
+def test_xlsx_edit_leaves_untouched_parts_byte_identical(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    with zipfile.ZipFile(f) as z:
+        before = {n: z.read(n) for n in z.namelist()}
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        changed = [n for n in z.namelist() if z.read(n) != before[n]]
+    # Just the edited worksheet. (openpyxl's writer already sets the recalc flag
+    # on this workbook, so even that part comes through untouched.)
+    assert changed == ["xl/worksheets/sheet1.xml"]
+
+
+def test_xlsx_edit_preserves_chart_and_image_parts(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    names = zip_names(f)
+    assert any(n.startswith("xl/charts/") for n in names)
+    assert any(n.startswith("xl/media/") for n in names)
+
+
+def test_xlsx_edit_size_delta_stays_small(editdoc, tmp_path):
+    # A ballooning file is what jammed rclone's post-upload size check; patching
+    # one part must not move the total appreciably.
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    before = f.stat().st_size
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    assert abs(f.stat().st_size - before) < before * 0.05
+
+
+# --- Excel-shaped workbooks: the shared-strings path openpyxl never writes ---
+
+
+def test_xlsx_edit_of_excel_shaped_workbook_replaces_shared_string_cell(
+    editdoc, tmp_path
+):
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    assert code == 0, err
+    assert cell_value(f, "Sheet1", "A1") == "changed"
+
+
+def test_xlsx_edit_does_not_disturb_a_cell_sharing_the_shared_string(editdoc, tmp_path):
+    # Shared strings are deduplicated: A1 and B2 both point at <si> 0. Editing
+    # the <si> in place would silently change both, so editdoc writes inline.
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    assert code == 0, err
+    assert cell_value(f, "Sheet1", "B2") == "shared"
+
+
+def test_xlsx_shared_strings_part_is_untouched_by_an_edit(editdoc, tmp_path):
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    with zipfile.ZipFile(f) as z:
+        before = z.read("xl/sharedStrings.xml")
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        assert z.read("xl/sharedStrings.xml") == before
+
+
+def test_xlsx_edit_preserves_the_xml_declaration_and_namespaces(editdoc, tmp_path):
+    # Re-serializing through ElementTree would drop standalone="yes" and
+    # re-prefix mc:/x14ac:, which is why the sheet is patched as text.
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        sheet = z.read("xl/worksheets/sheet1.xml")
+    assert sheet.startswith(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>')
+    assert b'mc:Ignorable="x14ac"' in sheet
+
+
+# --- Formulas ---
+
+
+def test_xlsx_formula_cell_refused_with_a_clean_error(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    before = sha256(f)
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B4", "value": 1})
+    assert code == 1
+    assert "Traceback" not in err
+    assert "formula" in err.lower()
+    assert sha256(f) == before
+
+
+def test_xlsx_edit_sets_full_calc_on_load_when_the_workbook_has_formulas(
+    editdoc, tmp_path
+):
+    # Formula cells cache their last result; without this flag the edit would
+    # display a stale number until something forced a recalculation.
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        assert b'fullCalcOnLoad="1"' in z.read("xl/workbook.xml")
+
+
+def test_xlsx_edit_adds_the_recalc_flag_when_the_workbook_lacks_it(editdoc, tmp_path):
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx", formula=True)
+    with zipfile.ZipFile(f) as z:
+        before = {n: z.read(n) for n in z.namelist()}
+    assert b"fullCalcOnLoad" not in before["xl/workbook.xml"]
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A5", "value": 5})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        changed = sorted(n for n in z.namelist() if z.read(n) != before[n])
+        assert b'fullCalcOnLoad="1"' in z.read("xl/workbook.xml")
+    assert changed == ["xl/workbook.xml", "xl/worksheets/sheet1.xml"]
+
+
+def test_xlsx_formula_free_workbook_touches_only_the_worksheet(editdoc, tmp_path):
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    with zipfile.ZipFile(f) as z:
+        before = {n: z.read(n) for n in z.namelist()}
+    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    assert code == 0, err
+    with zipfile.ZipFile(f) as z:
+        changed = [n for n in z.namelist() if z.read(n) != before[n]]
+    assert changed == ["xl/worksheets/sheet1.xml"]
+
+
+# --- Clean errors where the old openpyxl path leaked a Python traceback ---
+
+
+@pytest.mark.parametrize(
+    "edit, expected",
+    [
+        ({"sheet": "Sheet1", "cell": "B1", "value": "x"}, "merged"),
+        ({"sheet": "Sheet1", "cell": "A1048577", "value": "x"}, "range"),
+        ({"sheet": "Sheet1", "cell": "XFE1", "value": "x"}, "range"),
+        ({"sheet": "Sheet1", "cell": "A1", "value": ["a", "b"]}, "string"),
+    ],
+)
+def test_xlsx_bad_edits_give_clean_errors_not_tracebacks(
+    editdoc, tmp_path, edit, expected
+):
+    f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
+    before = sha256(f)
+    out, err, code = editdoc(f, edit)
+    assert code == 1
+    assert "Traceback" not in err
+    assert expected in err.lower()
+    assert sha256(f) == before
+
+
+def test_xlsx_batch_stops_on_a_formula_cell_leaving_the_file_untouched(
+    editdoc, tmp_path
+):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    before = sha256(f)
+    spec = [
+        {"sheet": "Budget", "cell": "A2", "value": "Q1x"},  # valid
+        {"sheet": "Budget", "cell": "B4", "value": 1},  # formula: refused
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 1
+    assert "edit 2" in err
+    assert sha256(f) == before
+
+
+def test_xlsx_batch_applies_several_edits_to_one_sheet(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    spec = [
+        {"sheet": "Budget", "cell": "A2", "value": "Q1x"},
+        {"sheet": "Budget", "cell": "D9", "value": 7},
+    ]
+    out, err, code = editdoc(f, spec)
+    assert code == 0, err
+    assert cell_value(f, "Budget", "A2") == "Q1x"
+    assert cell_value(f, "Budget", "D9") == 7
+
+
+def test_xlsx_deprecated_force_flag_is_accepted_with_a_notice(editdoc, tmp_path):
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(
+        f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"}, "--force"
+    )
+    assert code == 0, err
+    assert "deprecated" in err.lower()
+    assert cell_value(f, "Budget", "A2") == "Q1x"
+
+
+def test_docx_edit_preserves_customxml_parts(editdoc, tmp_path):
+    # python-docx walks the relationship graph rather than regenerating the
+    # package, so customXml survives a .docx edit. (An orphan part outside the
+    # graph does not — that limitation is documented, not fixed here.)
+    f = make_paras_docx(tmp_path / "x.docx", ["hello"])
+    before = zip_names(f)
+    assert "customXml/item1.xml" in before  # the python-docx template ships one
+    out, err, code = editdoc(f, {"old_string": "hello", "new_string": "goodbye"})
+    assert code == 0, err
+    assert set(zip_names(f)) >= set(before)
+
+
+@pytest.mark.skipif(shutil.which("soffice") is None, reason="LibreOffice not installed")
+def test_xlsx_edited_workbook_opens_in_libreoffice(editdoc, tmp_path):
+    # An independent reader's opinion that the patched package is still valid.
+    f = make_rich_xlsx(tmp_path / "x.xlsx")
+    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    assert code == 0, err
+    result = subprocess.run(
+        [
+            "soffice",
+            "--headless",
+            "--convert-to",
+            "ods",
+            "--outdir",
+            str(tmp_path),
+            str(f),
+        ],
+        capture_output=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "x.ods").exists()
 
 
 def test_unknown_flag_rejected(tmp_path):
