@@ -202,7 +202,6 @@ confirm.
   tables, images, cell comments and their VML anchors, threaded comments, macros,
   in-cell rich text, and SharePoint's `customXml`/`[trash]` parts therefore all
   survive an edit intact — there is no lossy mode and no flag to pass.
-  `--force` / `--allow-lossy` are still accepted but ignored.
   What `editdoc` **refuses** instead of guessing, each with a specific error:
   a cell holding a **formula** (overwriting it would strand the workbook's
   calculation chain — edit the formula's inputs instead); a cell inside a
