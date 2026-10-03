@@ -76,7 +76,7 @@ plain `grep` cannot:
 
 - **Prose** (`.docx`, `.pdf`, `.md`, `.txt`, …) — choose one context unit
   (mutually exclusive, default `--context` lines):
-  - `--context N` — N lines around each match (the original behaviour).
+  - `--context N` — N lines around each match.
   - `--context-paragraphs N` — the matching paragraph ± N whole paragraphs
     (units marked `¶`); respects real paragraph boundaries.
   - `--context-chars N` — a ±N character window around each match, merging
