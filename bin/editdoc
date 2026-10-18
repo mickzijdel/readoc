@@ -540,6 +540,9 @@ def apply_xlsx_edits(path, edits):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if "-h" in argv or "--help" in argv:
+        print(USAGE)
+        return
     flags = [a for a in argv if a.startswith("-")]
     files = [a for a in argv if not a.startswith("-")]
 

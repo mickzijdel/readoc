@@ -285,6 +285,22 @@ def test_no_args_shows_usage():
     assert "Usage" in out or "Usage" in err
 
 
+@pytest.mark.parametrize("flag", ["--help", "-h"])
+def test_help_prints_usage_and_edits_nothing(flag, tmp_path):
+    # Agents run `<tool> --help` to learn it, so help must win even when a file
+    # and a valid spec are also given.
+    from conftest import run_cli
+
+    f = make_paras_docx(tmp_path / "x.docx", ["hello"])
+    before = f.read_bytes()
+    out, err, code = run_cli(
+        "editdoc", flag, f, stdin='{"old_string": "hello", "new_string": "hi"}'
+    )
+    assert code == 0, err
+    assert "Usage" in out
+    assert f.read_bytes() == before
+
+
 def test_missing_file_errors(editdoc, tmp_path):
     out, err, code = editdoc(
         tmp_path / "nope.docx", {"old_string": "a", "new_string": "b"}
