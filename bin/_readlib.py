@@ -94,10 +94,10 @@ def pdf_comments(doc):
 
 
 def read_pdf_text(path, include_comments=True):
-    import fitz
+    import pymupdf
 
     lines = []
-    doc = fitz.open(path)
+    doc = pymupdf.open(path)
     for page_num, page in enumerate(doc, 1):
         text = page.get_text().strip()
         if text:

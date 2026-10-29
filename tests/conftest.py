@@ -198,9 +198,9 @@ def make_pdf(path, pages=("Hello from page one.",), comments=None):
     ``comments`` is an optional list of ``(page_index, text, author)`` tuples; each
     is added as a text (sticky-note) annotation on the given page.
     """
-    import fitz
+    import pymupdf
 
-    doc = fitz.open()
+    doc = pymupdf.open()
     pages_list = []
     for text in pages:
         page = doc.new_page()
