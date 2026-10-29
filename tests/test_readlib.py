@@ -5,9 +5,7 @@ individual scripts before the shared-module extraction.
 """
 
 import pytest
-
 from conftest import HUMAN_SIZE_CASES
-
 
 # --- human_size ---
 

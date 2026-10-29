@@ -1,9 +1,7 @@
 """Tests for the readoc CLI (single / multi-file reader)."""
 
 import pytest
-
 from conftest import HUMAN_SIZE_CASES
-
 
 # --- Unit: pure helpers ---
 
@@ -184,7 +182,7 @@ def test_multiple_files_each_get_header(readoc, docx_file, pdf_file):
 
 
 def test_missing_file(readoc, tmp_path):
-    out, err, code = readoc(tmp_path / "nope.docx")
+    _out, err, code = readoc(tmp_path / "nope.docx")
     assert code == 1
     assert "File not found" in err
 
@@ -192,13 +190,13 @@ def test_missing_file(readoc, tmp_path):
 def test_unsupported_extension(readoc, tmp_path):
     f = tmp_path / "thing.png"
     f.write_bytes(b"\x89PNG")
-    out, err, code = readoc(f)
+    _out, err, code = readoc(f)
     assert code == 1
     assert "Unsupported file type" in err
 
 
 def test_no_args_shows_usage(readoc):
-    out, err, code = readoc()
+    out, _err, code = readoc()
     assert code == 1
     assert "Usage: readoc" in out
 
@@ -248,12 +246,12 @@ def test_search_no_matches(readoc, prose_docx):
 def test_search_unsupported_extension(readoc, tmp_path):
     f = tmp_path / "thing.png"
     f.write_bytes(b"\x89PNG")
-    out, err, code = readoc("search", f, "x")
+    _out, err, code = readoc("search", f, "x")
     assert code == 1
     assert "Unsupported file type" in err
 
 
 def test_search_missing_file(readoc, tmp_path):
-    out, err, code = readoc("search", tmp_path / "nope.docx", "x")
+    _out, err, code = readoc("search", tmp_path / "nope.docx", "x")
     assert code == 1
     assert "File not found" in err

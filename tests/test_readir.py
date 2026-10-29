@@ -3,7 +3,6 @@
 import os
 
 import pytest
-
 from conftest import make_docx
 
 
@@ -138,7 +137,7 @@ def test_tree_filter(readir, sample_tree):
 def test_tree_non_directory(readir, tmp_path):
     f = tmp_path / "afile.txt"
     f.write_text("x", encoding="utf-8")
-    out, err, code = readir("tree", f)
+    _out, err, code = readir("tree", f)
     assert code == 1
     assert "Not a directory" in err
 
@@ -257,7 +256,7 @@ def test_search_no_comments_excludes_comment_text(readir, commented_tree):
 def test_search_non_directory(readir, tmp_path):
     f = tmp_path / "afile.txt"
     f.write_text("x", encoding="utf-8")
-    out, err, code = readir("search", f, "query")
+    _out, err, code = readir("search", f, "query")
     assert code == 1
     assert "Not a directory" in err
 
@@ -319,7 +318,7 @@ def test_search_chars_window_and_marker(readir, search_tree):
 
 
 def test_search_context_modes_mutually_exclusive(readir, search_tree):
-    out, err, code = readir(
+    _out, err, code = readir(
         "search", search_tree, "budget", "--context", "2", "--context-chars", "50"
     )
     assert code == 2

@@ -16,7 +16,6 @@ import os
 import re
 import sys
 
-
 # --- Sizes ---
 
 
@@ -44,7 +43,7 @@ def docx_comments(doc):
     """Return formatted comment lines from a python-docx Document, or []."""
     try:
         return [f"{(c.author or 'Unknown')}: {c.text}".rstrip() for c in doc.comments]
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable comments must not stop the read
         return []
 
 
@@ -68,7 +67,7 @@ def xlsx_comments(path):
                             f"[{sheet_name}!{cell.coordinate}] {author}: {text}"
                         )
         wb.close()
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable comments must not stop the read
         return []
     return lines
 
@@ -85,7 +84,7 @@ def pdf_comments(doc):
                     continue
                 author = (info.get("title") or "Unknown").strip() or "Unknown"
                 lines.append(f"[Page {page_num}] {author}: {content}")
-    except Exception:
+    except Exception:  # noqa: BLE001 - unreadable comments must not stop the read
         return []
     return lines
 
@@ -212,7 +211,7 @@ def read_file_content(path, include_comments=True):
             return read_xlsx_text(path, include_comments)
         elif ext == ".pdf":
             return read_pdf_text(path, include_comments)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - one bad file must not stop a folder read
         print(f"  Warning: Failed to read {path}: {e}", file=sys.stderr)
     return None
 

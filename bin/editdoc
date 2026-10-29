@@ -37,7 +37,7 @@ import tempfile
 # The xlsx surgery lives in a sibling module. realpath() resolves the PATH /
 # skills symlink so the import works however editdoc was invoked.
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from _xlsxzip import (  # noqa: E402
+from _xlsxzip import (
     XlsxError,
     XlsxPackage,
     force_full_recalc,
@@ -397,8 +397,10 @@ def apply_paragraph_op(doc, edit, index):
         for para in block:
             remove_paragraph(para)
         outputs = [
-            f"✓ edit {index + 1}: deleted {len(block)} paragraph"
-            f"{'' if len(block) == 1 else 's'} ({start_cid})"
+            (
+                f"✓ edit {index + 1}: deleted {len(block)} paragraph"
+                f"{'' if len(block) == 1 else 's'} ({start_cid})"
+            )
         ]
         return outputs
 
@@ -415,8 +417,10 @@ def apply_paragraph_op(doc, edit, index):
         remove_paragraph(para)
 
     outputs = [
-        f"✓ edit {index + 1}: replaced {len(block)} paragraph"
-        f"{'' if len(block) == 1 else 's'} → {len(lines)} ({start_cid})"
+        (
+            f"✓ edit {index + 1}: replaced {len(block)} paragraph"
+            f"{'' if len(block) == 1 else 's'} → {len(lines)} ({start_cid})"
+        )
     ]
     # Preview: the first paragraph rendered with its (inherited) formatting, then
     # the additional split lines as plain text.
@@ -457,7 +461,7 @@ def apply_docx_edits(path, edits):
 
     try:
         doc = Document(path)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any open failure becomes EditError
         raise EditError(f"could not open {path} as a .docx file ({e}).")
     outputs = []
     for i, edit in enumerate(edits):

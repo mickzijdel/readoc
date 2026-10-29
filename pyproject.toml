@@ -15,7 +15,7 @@ dev = [
     "python-docx",
     "openpyxl",
     "pymupdf",
-    "ruff",
+    "ruff>=0.17,<0.18",
     "vulture",
     "pillow>=11.3.0",
 ]
@@ -32,6 +32,14 @@ target-version = "py39"
 # The CLIs live in bin/ without a .py extension, so ruff won't discover them by
 # directory traversal unless we include them explicitly.
 extend-include = ["bin/readoc", "bin/readir", "bin/editdoc"]
+
+[tool.ruff.lint]
+ignore = ["UP031"]  # %-format → .format(): style only, the fix doesn't produce f-strings
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["PLW1510"]  # tests assert returncode themselves
+"**/test_*.py" = ["PLW1510"]
+"**/conftest.py" = ["PLW1510"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

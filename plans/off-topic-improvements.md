@@ -29,3 +29,9 @@ Currently refused outright. If a real need appears, the way in is to remove the
 `<f>` *and* the cell's `xl/calcChain.xml` entry (or drop the part along with its
 `[Content_Types].xml` Override and workbook rel so Excel regenerates it).
 Deferred because the refusal is the safe default and the demand is hypothetical.
+
+## CLAUDE.md says CI runs Python 3.12 (noticed 2026-10-29)
+
+`CLAUDE.md` lists "uv (Python env, 3.12 in CI)", but CI installs the Python
+`mise.lock` pins (3.14.6 at the v30 upgrade) through `jdx/mise-action`. Drop the
+version from that line or point it at `mise.lock`.

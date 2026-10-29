@@ -302,7 +302,7 @@ def test_help_prints_usage_and_edits_nothing(flag, tmp_path):
 
 
 def test_missing_file_errors(editdoc, tmp_path):
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         tmp_path / "nope.docx", {"old_string": "a", "new_string": "b"}
     )
     assert code == 1
@@ -312,14 +312,14 @@ def test_missing_file_errors(editdoc, tmp_path):
 def test_unsupported_extension_errors(editdoc, tmp_path):
     f = tmp_path / "x.pdf"
     f.write_text("hi")
-    out, err, code = editdoc(f, {"old_string": "a", "new_string": "b"})
+    _out, err, code = editdoc(f, {"old_string": "a", "new_string": "b"})
     assert code == 1
     assert "unsupported" in err.lower()
 
 
 def test_invalid_json_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["hello world"])
-    out, err, code = editdoc(f, "{bad json")
+    _out, err, code = editdoc(f, "{bad json")
     assert code == 1
     assert "json" in err.lower()
 
@@ -328,7 +328,7 @@ def test_empty_spec_is_noop_success(editdoc, tmp_path):
     # An empty array of edits is a valid no-op: nothing to do, exit 0, file intact.
     f = make_paras_docx(tmp_path / "x.docx", ["hello world"])
     before = sha256(f)
-    out, err, code = editdoc(f, [])
+    _out, err, code = editdoc(f, [])
     assert code == 0, err
     assert sha256(f) == before
 
@@ -347,7 +347,7 @@ def test_docx_basic_replace(editdoc, tmp_path):
 def test_docx_replace_is_whitespace_exact(editdoc, tmp_path):
     # A near-match with different internal spacing must NOT match.
     f = make_paras_docx(tmp_path / "x.docx", ["The  report  is due."])  # two spaces
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f,
         {"old_string": "The report is", "new_string": "X"},  # single spaces
     )
@@ -366,7 +366,7 @@ def test_docx_replace_across_fragmented_runs_inherits_first_run_format(
         tmp_path / "x.docx",
         runs=[("The ", False), ("report", True), (" is due", False)],
     )
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"old_string": "The report is due", "new_string": "The memo is ready"}
     )
     assert code == 0, err
@@ -384,7 +384,7 @@ def test_docx_replace_preserves_untouched_run_formatting(editdoc, tmp_path):
         tmp_path / "x.docx",
         runs=[("The ", False), ("report", True), (" is due", False)],
     )
-    out, err, code = editdoc(f, {"old_string": "The ", "new_string": "A "})
+    _out, err, code = editdoc(f, {"old_string": "The ", "new_string": "A "})
     assert code == 0, err
     doc = Document(str(f))
     para = doc.paragraphs[0]
@@ -395,7 +395,7 @@ def test_docx_replace_preserves_untouched_run_formatting(editdoc, tmp_path):
 
 def test_docx_replace_not_found_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["hello world"])
-    out, err, code = editdoc(f, {"old_string": "goodbye", "new_string": "hi"})
+    _out, err, code = editdoc(f, {"old_string": "goodbye", "new_string": "hi"})
     assert code == 1
     assert "not found" in err.lower()
     assert body_texts(f) == ["hello world"]
@@ -405,7 +405,7 @@ def test_docx_replace_ambiguous_without_replace_all_errors(editdoc, tmp_path):
     f = make_paras_docx(
         tmp_path / "x.docx", ["alpha here", "alpha there"]
     )  # 'alpha' twice
-    out, err, code = editdoc(f, {"old_string": "alpha", "new_string": "beta"})
+    _out, err, code = editdoc(f, {"old_string": "alpha", "new_string": "beta"})
     assert code == 1
     assert "2" in err  # mentions the count
     assert "replace_all" in err or "context" in err.lower()
@@ -414,7 +414,7 @@ def test_docx_replace_ambiguous_without_replace_all_errors(editdoc, tmp_path):
 
 def test_docx_replace_all(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["alpha here", "alpha there"])
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"old_string": "alpha", "new_string": "beta", "replace_all": True}
     )
     assert code == 0, err
@@ -424,14 +424,18 @@ def test_docx_replace_all(editdoc, tmp_path):
 def test_docx_replace_disambiguate_with_context(editdoc, tmp_path):
     # Adding surrounding context makes an otherwise-duplicated word unique.
     f = make_paras_docx(tmp_path / "x.docx", ["alpha here", "alpha there"])
-    out, err, code = editdoc(f, {"old_string": "alpha here", "new_string": "beta here"})
+    _out, err, code = editdoc(
+        f, {"old_string": "alpha here", "new_string": "beta here"}
+    )
     assert code == 0, err
     assert body_texts(f) == ["beta here", "alpha there"]
 
 
 def test_docx_old_string_with_newline_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["line one", "line two"])
-    out, err, code = editdoc(f, {"old_string": "line one\nline two", "new_string": "x"})
+    _out, err, code = editdoc(
+        f, {"old_string": "line one\nline two", "new_string": "x"}
+    )
     assert code == 1
     assert "newline" in err.lower() or "paragraph" in err.lower()
 
@@ -444,7 +448,7 @@ def test_docx_replace_inside_table_cell(editdoc, tmp_path):
     t.rows[0].cells[1].text = "old value"
     f = tmp_path / "x.docx"
     doc.save(str(f))
-    out, err, code = editdoc(f, {"old_string": "old value", "new_string": "new value"})
+    _out, err, code = editdoc(f, {"old_string": "old value", "new_string": "new value"})
     assert code == 0, err
     cell_text = Document(str(f)).tables[0].rows[0].cells[1].text
     assert cell_text == "new value"
@@ -457,7 +461,7 @@ def test_docx_single_paragraph_replace(editdoc, tmp_path):
     f = make_paras_docx(
         tmp_path / "x.docx", ["Keep me", "Quarterly results were strong", "Keep me too"]
     )
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"start_contains": "Quarterly results", "new_text": "Replaced line"}
     )
     assert code == 0, err
@@ -467,7 +471,7 @@ def test_docx_single_paragraph_replace(editdoc, tmp_path):
 def test_docx_paragraph_split_into_many(editdoc, tmp_path):
     # new_text with newlines turns one paragraph into several.
     f = make_paras_docx(tmp_path / "x.docx", ["before", "TARGET para", "after"])
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"start_contains": "TARGET", "new_text": "one\ntwo\nthree"}
     )
     assert code == 0, err
@@ -479,7 +483,7 @@ def test_docx_range_replace_five_to_three(editdoc, tmp_path):
         tmp_path / "x.docx",
         ["head", "P1 start", "P2", "P3", "P4", "P5 end", "tail"],
     )
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f,
         {
             "start_contains": "P1 start",
@@ -495,7 +499,7 @@ def test_docx_range_delete_with_empty_new_text(editdoc, tmp_path):
     f = make_paras_docx(
         tmp_path / "x.docx", ["keep", "drop 1", "drop 2", "drop 3", "keep too"]
     )
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f,
         {"start_contains": "drop 1", "end_contains": "drop 3", "new_text": ""},
     )
@@ -505,7 +509,7 @@ def test_docx_range_delete_with_empty_new_text(editdoc, tmp_path):
 
 def test_docx_single_paragraph_delete(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["keep", "remove me", "keep too"])
-    out, err, code = editdoc(f, {"start_contains": "remove me", "new_text": ""})
+    _out, err, code = editdoc(f, {"start_contains": "remove me", "new_text": ""})
     assert code == 0, err
     assert body_texts(f) == ["keep", "keep too"]
 
@@ -517,7 +521,7 @@ def test_docx_paragraph_split_inherits_style(editdoc, tmp_path):
     doc.add_paragraph("Heading target", style="Heading 1")
     f = tmp_path / "x.docx"
     doc.save(str(f))
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"start_contains": "Heading target", "new_text": "H one\nH two"}
     )
     assert code == 0, err
@@ -529,7 +533,7 @@ def test_docx_paragraph_split_inherits_style(editdoc, tmp_path):
 
 def test_docx_paragraph_anchor_not_unique_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["dup line", "dup line"])
-    out, err, code = editdoc(f, {"start_contains": "dup line", "new_text": "x"})
+    _out, err, code = editdoc(f, {"start_contains": "dup line", "new_text": "x"})
     assert code == 1
     assert "2" in err
     assert body_texts(f) == ["dup line", "dup line"]
@@ -537,14 +541,14 @@ def test_docx_paragraph_anchor_not_unique_errors(editdoc, tmp_path):
 
 def test_docx_paragraph_anchor_not_found_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["a", "b"])
-    out, err, code = editdoc(f, {"start_contains": "nope", "new_text": "x"})
+    _out, err, code = editdoc(f, {"start_contains": "nope", "new_text": "x"})
     assert code == 1
     assert "not found" in err.lower()
 
 
 def test_docx_range_end_before_start_errors(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["first", "second"])
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f,
         {"start_contains": "second", "end_contains": "first", "new_text": "x"},
     )
@@ -559,7 +563,7 @@ def test_docx_range_cross_container_errors(editdoc, tmp_path):
     t.rows[0].cells[0].text = "end here in cell"
     f = tmp_path / "x.docx"
     doc.save(str(f))
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f,
         {
             "start_contains": "start here",
@@ -584,7 +588,7 @@ def test_xlsx_set_existing_cell(editdoc, tmp_path):
 
 def test_xlsx_set_empty_cell(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx", rows=(("Quarter", "Amount"), ("Q1", 1000)))
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "C5", "value": "hello"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "C5", "value": "hello"})
     assert code == 0, err
     assert cell_value(f, "Budget", "C5") == "hello"
 
@@ -599,28 +603,28 @@ def test_xlsx_numeric_vs_string_coercion(editdoc, tmp_path):
 
 def test_xlsx_numeric_passed_as_json_number(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A7", "value": 42})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A7", "value": 42})
     assert code == 0, err
     assert cell_value(f, "Budget", "A7") == 42
 
 
 def test_xlsx_bad_sheet_errors(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Nonexistent", "cell": "A1", "value": "x"})
+    _out, err, code = editdoc(f, {"sheet": "Nonexistent", "cell": "A1", "value": "x"})
     assert code == 1
     assert "sheet" in err.lower()
 
 
 def test_xlsx_bad_coordinate_errors(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "1", "value": "x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "1", "value": "x"})
     assert code == 1
     assert "cell" in err.lower() or "coordinate" in err.lower()
 
 
 def test_xlsx_missing_value_errors(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A1"})
+    _out, _err, code = editdoc(f, {"sheet": "Budget", "cell": "A1"})
     assert code == 1
 
 
@@ -636,7 +640,7 @@ def test_docx_batch_all_or_nothing_on_failure(editdoc, tmp_path):
         {"old_string": "alpha unique", "new_string": "ALPHA"},  # valid
         {"old_string": "does-not-exist", "new_string": "x"},  # invalid
     ]
-    out, err, code = editdoc(f, spec)
+    _out, err, code = editdoc(f, spec)
     assert code == 1
     assert "edit 2" in err
     assert sha256(f) == before  # nothing written
@@ -648,7 +652,7 @@ def test_docx_batch_all_valid_applies_every_edit(editdoc, tmp_path):
         {"old_string": "alpha", "new_string": "A"},
         {"old_string": "gamma", "new_string": "G"},
     ]
-    out, err, code = editdoc(f, spec)
+    _out, err, code = editdoc(f, spec)
     assert code == 0, err
     assert body_texts(f) == ["A", "beta", "G"]
 
@@ -664,7 +668,7 @@ def test_docx_batch_multiple_range_deletes(editdoc, tmp_path):
         {"start_contains": "d1a", "end_contains": "d1b", "new_text": ""},
         {"start_contains": "d2a", "end_contains": "d2b", "new_text": ""},
     ]
-    out, err, code = editdoc(f, spec)
+    _out, err, code = editdoc(f, spec)
     assert code == 0, err
     assert body_texts(f) == ["keep0", "keep1", "keep2"]
 
@@ -676,7 +680,7 @@ def test_xlsx_batch_all_or_nothing_on_failure(editdoc, tmp_path):
         {"sheet": "Budget", "cell": "A5", "value": "1"},  # valid
         {"sheet": "Nonexistent", "cell": "A1", "value": "x"},  # invalid
     ]
-    out, err, code = editdoc(f, spec)
+    _out, _err, code = editdoc(f, spec)
     assert code == 1
     assert sha256(f) == before
 
@@ -696,7 +700,7 @@ def test_docx_edit_paragraph_with_hyperlink_refuses_loudly(editdoc, tmp_path):
     f = tmp_path / "x.docx"
     doc.save(str(f))
     before = sha256(f)
-    out, err, code = editdoc(f, {"old_string": "Monday", "new_string": "Friday"})
+    _out, err, code = editdoc(f, {"old_string": "Monday", "new_string": "Friday"})
     assert code == 1
     assert "hyperlink" in err.lower() or "safely" in err.lower()
     assert sha256(f) == before  # nothing scrambled
@@ -712,7 +716,7 @@ def test_docx_hyperlink_in_other_paragraph_does_not_block_edit(editdoc, tmp_path
     doc.add_paragraph("Plain paragraph with target word.")
     f = tmp_path / "x.docx"
     doc.save(str(f))
-    out, err, code = editdoc(f, {"old_string": "target word", "new_string": "FIXED"})
+    _out, err, code = editdoc(f, {"old_string": "target word", "new_string": "FIXED"})
     assert code == 0, err
     texts = [p.text for p in Document(str(f)).paragraphs]
     assert "Plain paragraph with FIXED." in texts
@@ -729,7 +733,7 @@ def test_docx_paragraph_op_on_hyperlink_paragraph_refuses(editdoc, tmp_path):
     f = tmp_path / "x.docx"
     doc.save(str(f))
     before = sha256(f)
-    out, err, code = editdoc(f, {"start_contains": "Anchor", "new_text": "replaced"})
+    _out, err, code = editdoc(f, {"start_contains": "Anchor", "new_text": "replaced"})
     assert code == 1
     assert "hyperlink" in err.lower() or "safely" in err.lower()
     assert sha256(f) == before
@@ -744,7 +748,7 @@ def test_docx_replace_in_merged_cell(editdoc, tmp_path):
     merged.text = "MERGED unique target"
     f = tmp_path / "x.docx"
     doc.save(str(f))
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"old_string": "MERGED unique target", "new_string": "done"}
     )
     assert code == 0, err
@@ -754,7 +758,7 @@ def test_docx_replace_in_merged_cell(editdoc, tmp_path):
 def test_docx_empty_start_contains_rejected(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["only para"])
     before = sha256(f)
-    out, err, code = editdoc(f, {"start_contains": "", "new_text": "HIJACKED"})
+    _out, _err, code = editdoc(f, {"start_contains": "", "new_text": "HIJACKED"})
     assert code == 1
     assert body_texts(f) == ["only para"]
     assert sha256(f) == before
@@ -762,7 +766,7 @@ def test_docx_empty_start_contains_rejected(editdoc, tmp_path):
 
 def test_docx_empty_end_contains_rejected(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["alpha", "beta"])
-    out, err, code = editdoc(
+    _out, _err, code = editdoc(
         f, {"start_contains": "alpha", "end_contains": "", "new_text": "x"}
     )
     assert code == 1
@@ -774,7 +778,7 @@ def test_docx_empty_end_contains_rejected(editdoc, tmp_path):
 def test_xlsx_leading_zero_kept_as_string(editdoc, tmp_path):
     # Zip/account codes must not be truncated to ints.
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "00501"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "00501"})
     assert code == 0, err
     assert cell_value(f, "Budget", "A5") == "00501"
 
@@ -784,7 +788,7 @@ def test_xlsx_nan_inf_kept_as_string_not_blanked(editdoc, tmp_path):
     # silently blank the cell. Keep them as text.
     f = make_xlsx(tmp_path / "x.xlsx")
     for cell, val in (("A5", "nan"), ("A6", "inf"), ("A7", "-inf")):
-        out, err, code = editdoc(f, {"sheet": "Budget", "cell": cell, "value": val})
+        _out, err, code = editdoc(f, {"sheet": "Budget", "cell": cell, "value": val})
         assert code == 0, err
     assert cell_value(f, "Budget", "A5") == "nan"
     assert cell_value(f, "Budget", "A6") == "inf"
@@ -812,14 +816,14 @@ def test_xlsx_plain_integer_still_coerced(editdoc, tmp_path):
 
 def test_xlsx_null_clears_cell(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx", rows=(("Quarter", "Amount"), ("Q1", 1000)))
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": None})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": None})
     assert code == 0, err
     assert cell_value(f, "Budget", "B2") is None
 
 
 def test_xlsx_bool_stored(editdoc, tmp_path):
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": True})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": True})
     assert code == 0, err
     assert cell_value(f, "Budget", "A5") is True
 
@@ -827,7 +831,7 @@ def test_xlsx_bool_stored(editdoc, tmp_path):
 def test_xlsx_plain_workbook_not_refused(editdoc, tmp_path):
     # A chart-free data sheet edits with no friction and no flag.
     f = make_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
     assert code == 0, err
 
 
@@ -845,7 +849,7 @@ def test_xlsx_comment_workbook_edits_without_any_flag(editdoc, tmp_path):
     # so *every* workbook with a comment was refused, and --force then deleted
     # the comments it was warning about.
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     names = zip_names(f)
     assert any(n.startswith("xl/drawings/") and n.endswith(".vml") for n in names)
@@ -855,7 +859,7 @@ def test_xlsx_comment_workbook_edits_without_any_flag(editdoc, tmp_path):
 def test_xlsx_edit_preserves_every_zip_entry_in_order(editdoc, tmp_path):
     f = make_rich_xlsx(tmp_path / "x.xlsx")
     before = zip_names(f)
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     assert zip_names(f) == before  # list *and* order
 
@@ -864,7 +868,7 @@ def test_xlsx_edit_preserves_customxml_and_orphan_parts(editdoc, tmp_path):
     # The incident's literal symptom: SharePoint's content-type schema and its
     # own [trash] scratch blob, neither of which openpyxl knows how to keep.
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         assert z.read("customXml/item1.xml") == CUSTOM_XML
@@ -876,7 +880,7 @@ def test_xlsx_edit_leaves_untouched_parts_byte_identical(editdoc, tmp_path):
     f = make_rich_xlsx(tmp_path / "x.xlsx")
     with zipfile.ZipFile(f) as z:
         before = {n: z.read(n) for n in z.namelist()}
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         changed = [n for n in z.namelist() if z.read(n) != before[n]]
@@ -887,7 +891,7 @@ def test_xlsx_edit_leaves_untouched_parts_byte_identical(editdoc, tmp_path):
 
 def test_xlsx_edit_preserves_chart_and_image_parts(editdoc, tmp_path):
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     names = zip_names(f)
     assert any(n.startswith("xl/charts/") for n in names)
@@ -899,7 +903,7 @@ def test_xlsx_edit_size_delta_stays_small(editdoc, tmp_path):
     # one part must not move the total appreciably.
     f = make_rich_xlsx(tmp_path / "x.xlsx")
     before = f.stat().st_size
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     assert abs(f.stat().st_size - before) < before * 0.05
 
@@ -911,7 +915,7 @@ def test_xlsx_edit_of_excel_shaped_workbook_replaces_shared_string_cell(
     editdoc, tmp_path
 ):
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
     assert code == 0, err
     assert cell_value(f, "Sheet1", "A1") == "changed"
 
@@ -920,7 +924,7 @@ def test_xlsx_edit_does_not_disturb_a_cell_sharing_the_shared_string(editdoc, tm
     # Shared strings are deduplicated: A1 and B2 both point at <si> 0. Editing
     # the <si> in place would silently change both, so editdoc writes inline.
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
     assert code == 0, err
     assert cell_value(f, "Sheet1", "B2") == "shared"
 
@@ -929,7 +933,7 @@ def test_xlsx_shared_strings_part_is_untouched_by_an_edit(editdoc, tmp_path):
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
     with zipfile.ZipFile(f) as z:
         before = z.read("xl/sharedStrings.xml")
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         assert z.read("xl/sharedStrings.xml") == before
@@ -939,7 +943,7 @@ def test_xlsx_edit_preserves_the_xml_declaration_and_namespaces(editdoc, tmp_pat
     # Re-serializing through ElementTree would drop standalone="yes" and
     # re-prefix mc:/x14ac:, which is why the sheet is patched as text.
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         sheet = z.read("xl/worksheets/sheet1.xml")
@@ -953,7 +957,7 @@ def test_xlsx_edit_preserves_the_xml_declaration_and_namespaces(editdoc, tmp_pat
 def test_xlsx_formula_cell_refused_with_a_clean_error(editdoc, tmp_path):
     f = make_rich_xlsx(tmp_path / "x.xlsx")
     before = sha256(f)
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B4", "value": 1})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B4", "value": 1})
     assert code == 1
     assert "Traceback" not in err
     assert "formula" in err.lower()
@@ -966,7 +970,7 @@ def test_xlsx_edit_sets_full_calc_on_load_when_the_workbook_has_formulas(
     # Formula cells cache their last result; without this flag the edit would
     # display a stale number until something forced a recalculation.
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         assert b'fullCalcOnLoad="1"' in z.read("xl/workbook.xml")
@@ -977,7 +981,7 @@ def test_xlsx_edit_adds_the_recalc_flag_when_the_workbook_lacks_it(editdoc, tmp_
     with zipfile.ZipFile(f) as z:
         before = {n: z.read(n) for n in z.namelist()}
     assert b"fullCalcOnLoad" not in before["xl/workbook.xml"]
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A5", "value": 5})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A5", "value": 5})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         changed = sorted(n for n in z.namelist() if z.read(n) != before[n])
@@ -989,7 +993,7 @@ def test_xlsx_formula_free_workbook_touches_only_the_worksheet(editdoc, tmp_path
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
     with zipfile.ZipFile(f) as z:
         before = {n: z.read(n) for n in z.namelist()}
-    out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
+    _out, err, code = editdoc(f, {"sheet": "Sheet1", "cell": "A1", "value": "changed"})
     assert code == 0, err
     with zipfile.ZipFile(f) as z:
         changed = [n for n in z.namelist() if z.read(n) != before[n]]
@@ -1013,7 +1017,7 @@ def test_xlsx_bad_edits_give_clean_errors_not_tracebacks(
 ):
     f = make_excel_shaped_xlsx(tmp_path / "x.xlsx")
     before = sha256(f)
-    out, err, code = editdoc(f, edit)
+    _out, err, code = editdoc(f, edit)
     assert code == 1
     assert "Traceback" not in err
     assert expected in err.lower()
@@ -1029,7 +1033,7 @@ def test_xlsx_batch_stops_on_a_formula_cell_leaving_the_file_untouched(
         {"sheet": "Budget", "cell": "A2", "value": "Q1x"},  # valid
         {"sheet": "Budget", "cell": "B4", "value": 1},  # formula: refused
     ]
-    out, err, code = editdoc(f, spec)
+    _out, err, code = editdoc(f, spec)
     assert code == 1
     assert "edit 2" in err
     assert sha256(f) == before
@@ -1041,7 +1045,7 @@ def test_xlsx_batch_applies_several_edits_to_one_sheet(editdoc, tmp_path):
         {"sheet": "Budget", "cell": "A2", "value": "Q1x"},
         {"sheet": "Budget", "cell": "D9", "value": 7},
     ]
-    out, err, code = editdoc(f, spec)
+    _out, err, code = editdoc(f, spec)
     assert code == 0, err
     assert cell_value(f, "Budget", "A2") == "Q1x"
     assert cell_value(f, "Budget", "D9") == 7
@@ -1049,7 +1053,7 @@ def test_xlsx_batch_applies_several_edits_to_one_sheet(editdoc, tmp_path):
 
 def test_xlsx_deprecated_force_flag_is_accepted_with_a_notice(editdoc, tmp_path):
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(
+    _out, err, code = editdoc(
         f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"}, "--force"
     )
     assert code == 0, err
@@ -1062,7 +1066,7 @@ def test_xlsx_deprecated_force_flag_is_accepted_with_a_notice(editdoc, tmp_path)
 
 def test_xlsm_cell_edit_applies_and_keeps_the_macro_project(editdoc, tmp_path):
     f = make_xlsm(tmp_path / "x.xlsm")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": 1250})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "B2", "value": 1250})
     assert code == 0, err
     assert cell_value(f, "Budget", "B2") == 1250
     with zipfile.ZipFile(f) as z:
@@ -1071,7 +1075,7 @@ def test_xlsm_cell_edit_applies_and_keeps_the_macro_project(editdoc, tmp_path):
 
 def test_xlsm_is_not_rejected_as_an_unsupported_type(editdoc, tmp_path):
     f = make_xlsm(tmp_path / "x.xlsm")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A5", "value": "ok"})
     assert code == 0, err
     assert "Unsupported" not in err
 
@@ -1079,7 +1083,7 @@ def test_xlsm_is_not_rejected_as_an_unsupported_type(editdoc, tmp_path):
 def test_unsupported_extension_still_rejected(editdoc, tmp_path):
     f = tmp_path / "notes.rtf"
     f.write_text("hello")
-    out, err, code = editdoc(f, {"old_string": "hello", "new_string": "hi"})
+    _out, err, code = editdoc(f, {"old_string": "hello", "new_string": "hi"})
     assert code == 1
     assert "Unsupported file type" in err
 
@@ -1091,7 +1095,7 @@ def test_docx_edit_preserves_customxml_parts(editdoc, tmp_path):
     f = make_paras_docx(tmp_path / "x.docx", ["hello"])
     before = zip_names(f)
     assert "customXml/item1.xml" in before  # the python-docx template ships one
-    out, err, code = editdoc(f, {"old_string": "hello", "new_string": "goodbye"})
+    _out, err, code = editdoc(f, {"old_string": "hello", "new_string": "goodbye"})
     assert code == 0, err
     assert set(zip_names(f)) >= set(before)
 
@@ -1100,7 +1104,7 @@ def test_docx_edit_preserves_customxml_parts(editdoc, tmp_path):
 def test_xlsx_edited_workbook_opens_in_libreoffice(editdoc, tmp_path):
     # An independent reader's opinion that the patched package is still valid.
     f = make_rich_xlsx(tmp_path / "x.xlsx")
-    out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
+    _out, err, code = editdoc(f, {"sheet": "Budget", "cell": "A2", "value": "Q1x"})
     assert code == 0, err
     result = subprocess.run(
         [
@@ -1123,7 +1127,7 @@ def test_unknown_flag_rejected(tmp_path):
     from conftest import run_cli
 
     f = make_paras_docx(tmp_path / "x.docx", ["hello"])
-    out, err, code = run_cli(
+    _out, err, code = run_cli(
         "editdoc", f, "--frce", stdin='{"old_string": "hello", "new_string": "hi"}'
     )
     assert code == 1
@@ -1135,7 +1139,7 @@ def test_corrupt_docx_clean_error(editdoc, tmp_path):
     # Error:, not a raw Python traceback.
     f = tmp_path / "broken.docx"
     f.write_bytes(b"this is not a real docx package")
-    out, err, code = editdoc(f, {"old_string": "a", "new_string": "b"})
+    _out, err, code = editdoc(f, {"old_string": "a", "new_string": "b"})
     assert code == 1
     assert "Traceback" not in err
     assert "valid" in err.lower() or "could not" in err.lower()
@@ -1144,7 +1148,7 @@ def test_corrupt_docx_clean_error(editdoc, tmp_path):
 def test_corrupt_xlsx_clean_error(editdoc, tmp_path):
     f = tmp_path / "broken.xlsx"
     f.write_bytes(b"not a real xlsx zip")
-    out, err, code = editdoc(f, {"sheet": "S", "cell": "A1", "value": "x"})
+    _out, err, code = editdoc(f, {"sheet": "S", "cell": "A1", "value": "x"})
     assert code == 1
     assert "Traceback" not in err
     assert "valid" in err.lower() or "could not" in err.lower()
@@ -1158,7 +1162,7 @@ def test_multiple_files_rejected(tmp_path):
     a = make_paras_docx(tmp_path / "a.docx", ["one"])
     b = make_paras_docx(tmp_path / "b.docx", ["two"])
     before_b = sha256(b)
-    out, err, code = run_cli(
+    _out, err, code = run_cli(
         "editdoc",
         a,
         b,

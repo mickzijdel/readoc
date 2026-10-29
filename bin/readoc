@@ -15,8 +15,8 @@ prefixed with an unambiguous header box showing its path, type, and size — the
 same convention used by `readir read`, so concatenated output is never confusing.
 """
 
-import sys
 import os
+import sys
 
 # Comment extractors and the structure-aware search (used by `readoc search`)
 # live in a sibling module shared with readir. realpath() resolves the PATH /
@@ -24,14 +24,14 @@ import os
 # launch mode (direct, symlinked, or under uv). The print-style readers below
 # are readoc-specific and stay here so the normal read path is untouched.
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from _readlib import (  # noqa: E402
-    human_size,
-    docx_comments,
-    xlsx_comments,
-    pdf_comments,
+from _readlib import (
     READABLE_ALL,
+    docx_comments,
+    human_size,
+    pdf_comments,
     resolve_context,
     search_file,
+    xlsx_comments,
 )
 
 TYPE_LABELS = {".docx": "Word", ".xlsx": "Excel", ".xlsm": "Excel", ".pdf": "PDF"}

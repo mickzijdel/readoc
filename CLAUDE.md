@@ -33,7 +33,7 @@ workflow, keep all three in sync. Run the whole suite locally with
 `hk run check --all`.
 
 This repo follows Mick's dev-env standard (`dev-hooks:dev-env-setup`), version
-stamped via `DEV_ENV_VERSION` in `mise.toml` (currently **v10**). Tool versions
+stamped via `DEV_ENV_VERSION` in `mise.toml` (currently **v30**). Tool versions
 are pinned reproducibly in the committed `mise.lock`; bump them with
 `mise upgrade` (commit the diff). `uv` enforces a 4-day dependency cooldown
 (`[tool.uv] exclude-newer`). Key dev tooling: hk + pkl (pre-commit), uv (Python

@@ -123,7 +123,7 @@ on every push and PR to `master`) runs: `ruff check` / `ruff format`, `pytest`,
 `vulture` (dead-code), `jscpd` (duplication, via `npx`), `gitleaks` (secret
 scanning, allowlisting gitignored runtime paths via `.gitleaks.toml`), and a
 large-file guard. The repo follows Mick's dev-env standard
-(`dev-hooks:dev-env-setup`, v10); `uv` enforces a 4-day dependency cooldown
+(`dev-hooks:dev-env-setup`, v30); `uv` enforces a 4-day dependency cooldown
 (`[tool.uv] exclude-newer`) as supply-chain seasoning.
 
 ## Layout

@@ -101,7 +101,7 @@ _REF_ATTR = _attr("ref")
 _FULLCALC_ATTR = _attr("fullCalcOnLoad")
 
 _FORMULA_OPEN = re.compile(r"<f(?=[\s/>])")
-_FORMULA_TEXT = re.compile(r"<f" + _ATTRS + r">(.*?)</f>", re.S)
+_FORMULA_TEXT = re.compile(r"<f" + _ATTRS + r">(.*?)</f>", re.DOTALL)
 
 _REF_RE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([0-9]{1,7})$")
 _RANGE_RE = re.compile(r"^([A-Z]+[0-9]+)(?::([A-Z]+[0-9]+))?$")
@@ -526,7 +526,7 @@ class XlsxPackage:
         try:
             self._zin = zipfile.ZipFile(path)
             self._names = set(self._zin.namelist())
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - any open failure becomes XlsxError
             raise XlsxError(str(error))
         self._staged = {}
         self._workbook_part = self._find_workbook_part()
